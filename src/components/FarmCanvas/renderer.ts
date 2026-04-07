@@ -1,7 +1,8 @@
 import { Application, Graphics, Container } from "pixi.js";
 import type { GridJson } from "@/types/farm";
 import { generateTilePositions } from "./gridGenerator";
-import { getCropEmoji, createEmojiSprite, addWarningOverlay, removeWarningOverlay } from "./tileSprites";
+import { addWarningOverlay, removeWarningOverlay } from "./tileSprites";
+import { createCropSprite, clearCropSpriteCache } from "./cropSprites";
 import { WeatherLayer } from "./weatherEffects";
 
 export interface RendererOptions {
@@ -138,24 +139,21 @@ export async function initRenderer(
 
       tileContainer.addChild(g);
 
-      // Add crop emoji sprite for active tiles
+      // Add crop sprite for active tiles
       if (tile.isActive && options?.plotStages) {
         const stage = options.plotStages[tile.plotLabel];
         if (stage) {
-          // Use diseased emoji if warning_level is red
+          // Use diseased sprite if warning_level is red
           const warning = options.plotWarnings?.[tile.plotLabel];
           const effectiveStage =
             warning?.warningLevel === "red" ? "diseased" : stage.growthStage;
-          const emoji = getCropEmoji(stage.cropName, effectiveStage);
-          if (emoji) {
-            const spriteSize = Math.max(16, tileWidth * 0.4);
-            const sprite = createEmojiSprite(emoji, spriteSize);
-            if (sprite) {
-              sprite.x = tile.screenX + tileWidth / 2;
-              sprite.y =
-                tile.screenY + tileHeight / 2 - tileHeight * 0.15;
-              spriteContainer.addChild(sprite);
-            }
+          const spriteSize = Math.max(16, Math.round(tileWidth * 0.55));
+          const sprite = createCropSprite(app, stage.cropName, effectiveStage, spriteSize);
+          if (sprite) {
+            sprite.x = tile.screenX + tileWidth / 2;
+            sprite.y =
+              tile.screenY + tileHeight / 2 - tileHeight * 0.15;
+            spriteContainer.addChild(sprite);
           }
         }
       }
@@ -192,6 +190,7 @@ export async function initRenderer(
   meta._resizeObserver = resizeObserver;
   meta._weatherLayer = weatherLayer;
   meta._warningOverlays = warningOverlays;
+  meta._clearCropSpriteCache = clearCropSpriteCache;
 
   return app;
 }

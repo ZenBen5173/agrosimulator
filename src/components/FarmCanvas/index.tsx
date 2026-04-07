@@ -61,6 +61,8 @@ export default function FarmCanvas({
         obs?.disconnect();
         const wl = meta._weatherLayer as { destroy: () => void } | undefined;
         wl?.destroy();
+        const clearCache = meta._clearCropSpriteCache as (() => void) | undefined;
+        clearCache?.();
 
         appRef.current.destroy(true);
         appRef.current = null;
