@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
-import SwipeDrawer from "@/components/SwipeDrawer";
 import PlotBottomSheet from "@/components/PlotBottomSheet";
 import type { GridJson, PlotData, MarketPrice, TaskData } from "@/types/farm";
 
@@ -397,10 +396,75 @@ export default function HomePage() {
     : "Sunny";
   const weatherTemp = weather ? weather.temp_celsius : 27;
 
+  const crops = marketPrices.filter((p) => p.item_type === "crop");
+  const supplies = marketPrices.filter(
+    (p) => p.item_type === "fertilizer" || p.item_type === "pesticide"
+  );
+
+  const forecastDays =
+    weather?.forecast && weather.forecast.length > 0
+      ? weather.forecast
+      : Array.from({ length: 5 }, (_, i) => {
+          const d = new Date();
+          d.setDate(d.getDate() + i);
+          return {
+            date: d.toISOString().split("T")[0],
+            condition: "sunny",
+            temp_min: 25,
+            temp_max: 31,
+            rain_chance: 0,
+          };
+        });
+
+  const FORECAST_EMOJI: Record<string, string> = {
+    sunny: "☀️",
+    overcast: "⛅",
+    rainy: "🌧️",
+    thunderstorm: "⛈️",
+    drought: "🔥",
+    flood_risk: "🌊",
+  };
+
+  const TASK_TYPE_EMOJI: Record<string, string> = {
+    inspection: "🔍",
+    watering: "💧",
+    fertilizing: "🌱",
+    treatment: "💊",
+    harvesting: "🌾",
+    replanting: "🔄",
+    farm_wide: "🏡",
+  };
+
+  const PRIORITY_STYLE: Record<
+    string,
+    { bg: string; text: string; label: string }
+  > = {
+    urgent: { bg: "bg-red-100", text: "text-red-700", label: "Urgent" },
+    normal: { bg: "bg-amber-100", text: "text-amber-700", label: "Normal" },
+    low: { bg: "bg-gray-100", text: "text-gray-600", label: "Low" },
+  };
+
+  function trendArrow(trend: string) {
+    if (trend === "up") return "↑";
+    if (trend === "down") return "↓";
+    return "→";
+  }
+
+  function trendColor(trend: string) {
+    if (trend === "up") return "text-green-600";
+    if (trend === "down") return "text-red-500";
+    return "text-gray-500";
+  }
+
+  function getDayName(dateStr: string) {
+    const d = new Date(dateStr + "T12:00:00");
+    return d.toLocaleDateString("en", { weekday: "short" });
+  }
+
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-sky-200">
-      {/* Farm Canvas — fills full screen behind the drawer */}
-      <div className="absolute inset-0" style={{ height: "70vh" }}>
+    <div className="min-h-screen bg-white">
+      {/* Farm Canvas — sticky top section */}
+      <div className="relative" style={{ height: "55vh" }}>
         <FarmCanvas
           gridJson={gridJson}
           onTileClick={handleTileClick}
@@ -409,50 +473,187 @@ export default function HomePage() {
           plotWarnings={plotWarnings}
           className="h-full w-full"
         />
+
+        {/* Top-left: Weather badge */}
+        <div className="absolute top-4 left-4 z-20 rounded-full bg-white/80 px-3 py-1.5 shadow backdrop-blur-sm">
+          <span className="text-sm font-medium text-gray-700">
+            {weatherEmoji} {weatherLabel} · {weatherTemp}°C
+          </span>
+        </div>
+
+        {/* Top-right: Farm name */}
+        <div className="absolute top-4 right-4 z-20">
+          <span className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-gray-700 shadow backdrop-blur-sm">
+            {farm.name || "My Farm"}
+          </span>
+        </div>
       </div>
 
-      {/* Top-left: Weather badge */}
-      <div className="absolute top-4 left-4 z-20 rounded-full bg-white/80 px-3 py-1.5 shadow backdrop-blur-sm">
-        <span className="text-sm font-medium text-gray-700">
-          {weatherEmoji} {weatherLabel} · {weatherTemp}°C
-        </span>
-      </div>
-
-      {/* Top-right: Farm name + settings */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-        <span className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-gray-700 shadow backdrop-blur-sm">
-          {farm.name || "My Farm"}
-        </span>
-        <button className="rounded-full bg-white/80 p-2 shadow backdrop-blur-sm">
-          <svg
-            className="h-4 w-4 text-gray-600"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
+      {/* Scrollable content panel */}
+      <div className="-mt-4 relative z-10 rounded-t-2xl bg-white px-4 pt-5 pb-8 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+        {/* Quick Actions */}
+        <div className="mb-5 flex gap-3">
+          <button
+            onClick={handleScanCrop}
+            className="flex-1 rounded-xl bg-green-50 px-4 py-3 text-center text-sm font-medium text-green-700 transition-colors hover:bg-green-100"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-            />
-          </svg>
-        </button>
-      </div>
+            🔍 Scan a crop
+          </button>
+          <button className="flex-1 rounded-xl bg-blue-50 px-4 py-3 text-center text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100">
+            📋 Farm history
+          </button>
+        </div>
 
-      {/* Swipe Drawer */}
-      <SwipeDrawer
-        marketPrices={marketPrices}
-        forecast={weather?.forecast}
-        tasks={tasks}
-        onCompleteTask={handleCompleteTask}
-        onScanCrop={handleScanCrop}
-      />
+        {/* Today's Tasks */}
+        <div className="mb-5">
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-gray-800">
+              Today&apos;s Tasks
+            </h3>
+            <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">
+              {tasks.length}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {tasks.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 p-3 text-center text-sm text-gray-400">
+                All caught up! No tasks for today.
+              </div>
+            ) : (
+              tasks.map((task) => {
+                const emoji = TASK_TYPE_EMOJI[task.task_type] || "📋";
+                const pStyle =
+                  PRIORITY_STYLE[task.priority] || PRIORITY_STYLE.normal;
+                return (
+                  <div
+                    key={task.id}
+                    className="flex items-start gap-3 rounded-lg bg-gray-50 px-3 py-2.5"
+                  >
+                    <button
+                      onClick={() => handleCompleteTask(task.id)}
+                      className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 border-gray-300 transition-colors hover:border-green-500 hover:bg-green-50"
+                      aria-label={`Complete task: ${task.title}`}
+                    >
+                      <span className="text-[10px] text-transparent">✓</span>
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{emoji}</span>
+                        <span className="truncate text-sm font-medium text-gray-800">
+                          {task.title}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-gray-500 line-clamp-1">
+                        {task.description}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${pStyle.bg} ${pStyle.text}`}
+                        >
+                          {pStyle.label}
+                        </span>
+                        {task.plot_label && (
+                          <span className="text-[10px] text-gray-400">
+                            Plot {task.plot_label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* 5-Day Forecast */}
+        <div className="mb-5">
+          <h3 className="mb-2 text-sm font-bold text-gray-800">
+            5-Day Forecast
+          </h3>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {forecastDays.map(
+              (day: {
+                date: string;
+                condition: string;
+                temp_min: number;
+                temp_max: number;
+                rain_chance: number;
+              }) => (
+                <div
+                  key={day.date}
+                  className="flex flex-shrink-0 flex-col items-center rounded-lg bg-sky-50 px-3 py-2"
+                >
+                  <span className="text-xs text-gray-500">
+                    {getDayName(day.date)}
+                  </span>
+                  <span className="text-lg">
+                    {FORECAST_EMOJI[day.condition] || "☀️"}
+                  </span>
+                  <span className="text-xs font-medium text-gray-700">
+                    {day.temp_min}–{day.temp_max}°C
+                  </span>
+                  {day.rain_chance > 0 && (
+                    <span className="text-[10px] text-blue-500">
+                      💧{day.rain_chance}%
+                    </span>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+        </div>
+
+        {/* Market Prices */}
+        <div className="mb-5">
+          <h3 className="mb-2 text-sm font-bold text-gray-800">
+            Market Prices
+          </h3>
+          <div className="space-y-1">
+            {crops.map((p) => (
+              <div
+                key={p.item_name}
+                className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2"
+              >
+                <span className="text-sm text-gray-700">{p.item_name}</span>
+                <span className="text-sm font-medium text-gray-900">
+                  RM{p.price_per_kg.toFixed(2)}/{p.unit}{" "}
+                  <span className={trendColor(p.trend)}>
+                    {trendArrow(p.trend)}{" "}
+                    {p.trend_pct !== 0 ? `${Math.abs(p.trend_pct)}%` : ""}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Supplies */}
+        {supplies.length > 0 && (
+          <div className="mb-5">
+            <h3 className="mb-2 text-sm font-bold text-gray-800">
+              Fertilizers &amp; Pesticides
+            </h3>
+            <div className="space-y-1">
+              {supplies.map((p) => (
+                <div
+                  key={p.item_name}
+                  className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2"
+                >
+                  <span className="text-sm text-gray-700">{p.item_name}</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    RM{p.price_per_kg.toFixed(2)}/{p.unit}{" "}
+                    <span className={trendColor(p.trend)}>
+                      {trendArrow(p.trend)}{" "}
+                      {p.trend_pct !== 0 ? `${Math.abs(p.trend_pct)}%` : ""}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Plot Bottom Sheet */}
       <PlotBottomSheet
