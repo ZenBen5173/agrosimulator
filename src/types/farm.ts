@@ -18,6 +18,7 @@ export interface PlotData {
   colour_hex: string;
   planted_date: string | null;
   expected_harvest: string | null;
+  photo_url?: string | null;
 }
 
 export interface MarketPrice {
@@ -44,4 +45,46 @@ export interface TaskData {
   triggered_by: string | null;
   created_at: string;
   plot_label?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  farm_id: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface FinancialRecord {
+  id: string;
+  farm_id: string;
+  plot_id: string | null;
+  record_type: "expense" | "income";
+  category: string;
+  amount: number;
+  description: string | null;
+  record_date: string;
+  created_at: string;
+}
+
+export interface ActivityItem {
+  id: string;
+  farm_id: string;
+  plot_id: string | null;
+  event_type: string;
+  title: string;
+  description: string | null;
+  photo_url: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AppNotification {
+  id: string;
+  type: "weather" | "harvest" | "risk" | "task" | "info";
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
 }

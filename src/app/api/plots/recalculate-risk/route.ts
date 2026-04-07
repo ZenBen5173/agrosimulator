@@ -26,12 +26,33 @@ export async function POST(request: Request) {
     const { data: plots } = await supabase
       .from("plots")
       .select(
-        "id, label, crop_name, growth_stage, planted_date, days_since_checked, warning_level"
+        "id, label, crop_name, growth_stage, planted_date, days_since_checked, warning_level, warning_reason, risk_score"
       )
       .eq("farm_id", farm_id);
 
     if (!plots || plots.length === 0) {
       return NextResponse.json({ plots: [] });
+    }
+
+    // Check if we already ran risk scoring today
+    const today = new Date().toISOString().split("T")[0];
+    const { data: recentRiskEvents } = await supabase
+      .from("plot_events")
+      .select("id")
+      .eq("farm_id", farm_id)
+      .eq("event_type", "ai_risk_recalc")
+      .gte("created_at", today + "T00:00:00Z")
+      .limit(1);
+
+    if (recentRiskEvents && recentRiskEvents.length > 0) {
+      // Already scored today — return current plot risk data without calling Gemini
+      const cachedResults = plots.map((p) => ({
+        label: p.label,
+        risk_score: p.risk_score ?? 0,
+        warning_level: p.warning_level || "none",
+        warning_reason: p.warning_reason || "",
+      }));
+      return NextResponse.json({ plots: cachedResults, scored: false });
     }
 
     // Fetch last 7 weather snapshots

@@ -14,22 +14,83 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Hide Leaflet Draw toolbar and tooltip — we auto-start polygon mode */
-.leaflet-draw-toolbar,
-.leaflet-draw-actions,
-.leaflet-draw-tooltip {
+/* Hide Leaflet Draw toolbar/tooltip — scoped to onboarding map only */
+#farm-map .leaflet-draw-toolbar,
+#farm-map .leaflet-draw-actions,
+#farm-map .leaflet-draw-tooltip {
   display: none !important;
+}
+
+/* On redraw page: hide toolbar (we auto-start) but keep tooltip visible */
+#redraw-map .leaflet-draw-toolbar,
+#redraw-map .leaflet-draw-actions {
+  display: none !important;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+/* Chat message animation */
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-message-in {
+  animation: messageIn 0.3s ease-out;
+}
+
+/* Typing indicator */
+@keyframes bounce-dot {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+.typing-dot {
+  animation: bounce-dot 1.4s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Gantt chart scrollbar */
+.gantt-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.gantt-scroll::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+.gantt-scroll::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 3px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-message-in,
+  .typing-dot {
+    animation: none !important;
+  }
 }

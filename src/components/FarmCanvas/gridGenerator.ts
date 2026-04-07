@@ -3,8 +3,10 @@ import type { GridJson } from "@/types/farm";
 export interface TilePosition {
   row: number;
   col: number;
-  screenX: number;
+  screenX: number;   // top-left of hex bounding box
   screenY: number;
+  centerX: number;   // hex center
+  centerY: number;
   plotLabel: string;
   isActive: boolean;
   colour: number; // hex number for PixiJS
@@ -15,31 +17,34 @@ function hexStringToNumber(hex: string): number {
   return parseInt(clean, 16);
 }
 
+/**
+ * Generates pointy-top hexagonal tile positions for the farm grid.
+ * Returns tileWidth (hex width = √3·r) and tileHeight (hex height = 2·r).
+ */
 export function generateTilePositions(
   gridJson: GridJson,
   containerWidth: number,
   containerHeight: number
 ): { tiles: TilePosition[]; tileWidth: number; tileHeight: number } {
   const gridSize = gridJson.grid.length;
+  const sqrt3 = Math.sqrt(3);
 
-  // Calculate tile dimensions to fit the container
-  // The isometric grid spans: width = gridSize * tileWidth, height = gridSize * tileHeight/2
-  // We want the grid to fit nicely with some padding
-  const maxGridWidth = containerWidth * 0.85;
-  const maxGridHeight = containerHeight * 0.85;
+  // Calculate hex radius to fit the container with padding
+  const maxW = containerWidth * 0.9;
+  const maxH = containerHeight * 0.9;
 
-  // In isometric view, total width = gridSize * tileWidth, total height ≈ gridSize * tileHeight/2 + tileHeight
-  let tileWidth = maxGridWidth / gridSize;
-  let tileHeight = tileWidth * 0.5;
+  // Pointy-top hex layout:
+  //   Total width  ≈ (gridSize + 0.5) × hexWidth
+  //   Total height ≈ (1.5 × gridSize + 0.5) × r
+  const rFromWidth = maxW / (sqrt3 * (gridSize + 0.5));
+  const rFromHeight = maxH / (1.5 * gridSize + 0.5);
+  const r = Math.min(rFromWidth, rFromHeight);
 
-  // Check if height fits
-  const totalHeight = gridSize * (tileHeight / 2) + tileHeight;
-  if (totalHeight > maxGridHeight) {
-    tileHeight = (maxGridHeight * 2) / (gridSize + 2);
-    tileWidth = tileHeight * 2;
-  }
+  const hexWidth = sqrt3 * r;
+  const hexHeight = 2 * r;
+  const vertSpacing = 1.5 * r;
 
-  // Calculate bounding box of the isometric grid to centre it
+  // Compute raw centre positions
   let minX = Infinity,
     maxX = -Infinity,
     minY = Infinity,
@@ -48,57 +53,54 @@ export function generateTilePositions(
   const rawTiles: {
     row: number;
     col: number;
-    x: number;
-    y: number;
+    cx: number;
+    cy: number;
     plotLabel: string;
     isActive: boolean;
     colour: number;
   }[] = [];
 
-  for (let r = 0; r < gridSize; r++) {
-    for (let c = 0; c < gridSize; c++) {
-      const label = gridJson.grid[r][c];
+  for (let row = 0; row < gridSize; row++) {
+    for (let col = 0; col < gridSize; col++) {
+      const label = gridJson.grid[row][col];
       const isActive = label !== "out";
 
-      // Isometric projection
-      const x = (c - r) * (tileWidth / 2);
-      const y = (c + r) * (tileHeight / 2);
-
-      // Diamond corners for bounding box
-      const top = { x: x + tileWidth / 2, y: y };
-      const right = { x: x + tileWidth, y: y + tileHeight / 2 };
-      const bottom = { x: x + tileWidth / 2, y: y + tileHeight };
-      const left = { x: x, y: y + tileHeight / 2 };
-
-      minX = Math.min(minX, left.x);
-      maxX = Math.max(maxX, right.x);
-      minY = Math.min(minY, top.y);
-      maxY = Math.max(maxY, bottom.y);
+      // Centre of this hex
+      const cx = col * hexWidth + (row % 2 === 1 ? hexWidth / 2 : 0);
+      const cy = row * vertSpacing;
 
       let colour = 0xcccccc;
       if (isActive && gridJson.plots[label]) {
         colour = hexStringToNumber(gridJson.plots[label].colour);
       }
 
-      rawTiles.push({ row: r, col: c, x, y, plotLabel: label, isActive, colour });
+      // Bounding box extremes
+      minX = Math.min(minX, cx - hexWidth / 2);
+      maxX = Math.max(maxX, cx + hexWidth / 2);
+      minY = Math.min(minY, cy - r);
+      maxY = Math.max(maxY, cy + r);
+
+      rawTiles.push({ row, col, cx, cy, plotLabel: label, isActive, colour });
     }
   }
 
-  // Centre offset
-  const gridWidth = maxX - minX;
-  const gridHeight = maxY - minY;
-  const offsetX = (containerWidth - gridWidth) / 2 - minX;
-  const offsetY = (containerHeight - gridHeight) / 2 - minY;
+  // Centre the grid in the container
+  const gridW = maxX - minX;
+  const gridH = maxY - minY;
+  const offsetX = (containerWidth - gridW) / 2 - minX;
+  const offsetY = (containerHeight - gridH) / 2 - minY;
 
   const tiles: TilePosition[] = rawTiles.map((t) => ({
     row: t.row,
     col: t.col,
-    screenX: t.x + offsetX,
-    screenY: t.y + offsetY,
+    screenX: t.cx + offsetX - hexWidth / 2,
+    screenY: t.cy + offsetY - r,
+    centerX: t.cx + offsetX,
+    centerY: t.cy + offsetY,
     plotLabel: t.plotLabel,
     isActive: t.isActive,
     colour: t.colour,
   }));
 
-  return { tiles, tileWidth, tileHeight };
+  return { tiles, tileWidth: hexWidth, tileHeight: hexHeight };
 }

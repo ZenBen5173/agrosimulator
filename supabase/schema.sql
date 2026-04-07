@@ -148,6 +148,15 @@ CREATE TABLE planting_plans (
   created_at timestamptz DEFAULT now()
 );
 
+CREATE TABLE chat_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  farm_id uuid REFERENCES farms(id) NOT NULL,
+  role text NOT NULL,              -- 'user' or 'assistant'
+  content text NOT NULL,
+  metadata jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
 -- ============================================================
 -- ROW LEVEL SECURITY
 -- ============================================================
@@ -195,6 +204,10 @@ CREATE POLICY "farm owner only" ON expert_referrals FOR ALL
 
 ALTER TABLE planting_plans ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "farm owner only" ON planting_plans FOR ALL
+  USING (farm_id IN (SELECT id FROM farms WHERE user_id = auth.uid()));
+
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "farm owner only" ON chat_messages FOR ALL
   USING (farm_id IN (SELECT id FROM farms WHERE user_id = auth.uid()));
 
 -- ============================================================

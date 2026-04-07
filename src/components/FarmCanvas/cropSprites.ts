@@ -1,196 +1,249 @@
-import { Graphics, Container, RenderTexture, Sprite, Application } from "pixi.js";
+import {
+  Graphics,
+  RenderTexture,
+  Sprite,
+  Application,
+  Texture,
+} from "pixi.js";
 
 /**
- * Programmatic isometric crop sprites drawn with PixiJS Graphics.
- * Each crop × growth stage gets a unique vector illustration cached as a texture.
+ * Crop sprite system — uses a 16×16 sprite sheet (CC0 by josehzz)
+ * with vector-drawn fallback for crops not in the sheet.
+ *
+ * Sprite sheet: /sprites/crops.png — 192×160, 12 cols × 10 rows
+ * Layout: 2 crops per row, 6 frames each (portrait + 5 growth stages)
+ *   Left crop:  col 0 = portrait, cols 1-5 = growth stages
+ *   Right crop: col 6 = portrait, cols 7-11 = growth stages
  */
 
-const spriteCache = new Map<string, RenderTexture>();
+// ─── Sprite Sheet Constants ──────────────────────────────────────
 
-// Colour palettes per crop
-const PALETTES = {
-  paddy: { stem: 0x6b8e23, leaf: 0x7cba3f, fruit: 0xdaa520, ripe: 0xffd700 },
-  chilli: { stem: 0x4a7c3f, leaf: 0x5da84e, fruit: 0xe74c3c, ripe: 0xc0392b },
-  kangkung: { stem: 0x3a7d44, leaf: 0x27ae60, fruit: 0x2ecc71, ripe: 0x27ae60 },
-  tomato: { stem: 0x5a8a4a, leaf: 0x6ab04c, fruit: 0xe74c3c, ripe: 0xff6348 },
-  corn: { stem: 0x6b8e23, leaf: 0x7cba3f, fruit: 0xf1c40f, ripe: 0xf39c12 },
-  banana: { stem: 0x8b6914, leaf: 0x2ecc71, fruit: 0xf1c40f, ripe: 0xffd700 },
-  sweetpotato: { stem: 0x6b8e23, leaf: 0x27ae60, fruit: 0xd35400, ripe: 0xe67e22 },
-  default: { stem: 0x6b8e23, leaf: 0x7cba3f, fruit: 0x95a5a6, ripe: 0xbdc3c7 },
+const TILE = 16; // pixels per frame in the sheet
+
+interface SheetPos {
+  row: number;
+  side: "left" | "right";
+}
+
+// Crop positions in the sprite sheet (from README)
+// Row order: Turnip/Rose, Cucumber/Tulip, Tomato/Melon, Eggplant/Lemon,
+//   Pineapple/Rice, Wheat/Grapes, Strawberry/Cassava, Potato/Coffee,
+//   Orange/Avocado, Corn/Sunflower
+const SHEET_MAP: Record<string, SheetPos> = {
+  // Direct matches
+  rice:       { row: 4, side: "right" },
+  paddy:      { row: 4, side: "right" },
+  tomato:     { row: 2, side: "left" },
+  corn:       { row: 9, side: "left" },
+  potato:     { row: 7, side: "left" },
+  wheat:      { row: 5, side: "left" },
+  cucumber:   { row: 1, side: "left" },
+  eggplant:   { row: 3, side: "left" },
+  pineapple:  { row: 4, side: "left" },
+  cassava:    { row: 6, side: "right" },
+  sunflower:  { row: 9, side: "right" },
+  melon:      { row: 2, side: "right" },
+  strawberry: { row: 6, side: "left" },
+  // Substitutes for Malaysian crops
+  chilli:      { row: 3, side: "left" },   // eggplant shape
+  cili:        { row: 3, side: "left" },
+  chili:       { row: 3, side: "left" },
+  sweetpotato: { row: 6, side: "right" },  // cassava (root crop)
+  ubi:         { row: 6, side: "right" },
 };
 
-function getPalette(cropName: string) {
+// Map our growth stages → frame index (0-4) in the 5-stage strip
+const STAGE_FRAME: Record<string, number> = {
+  seedling:      0,
+  growing:       2,
+  mature:        3,
+  harvest_ready: 4,
+  harvested:     0, // re-use seedling frame, shown faded
+  diseased:      3, // mature frame, shown tinted
+};
+
+// ─── Sheet Loading ───────────────────────────────────────────────
+
+let sheetImage: HTMLImageElement | null = null;
+const frameCache = new Map<string, Texture>();
+
+/** Pre-load the sprite sheet image. Call once before creating sprites. */
+export async function loadCropSpriteSheet(): Promise<void> {
+  if (sheetImage) return;
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = reject;
+      img.src = "/sprites/crops.png";
+    });
+    sheetImage = img;
+  } catch (e) {
+    console.warn("Crop sprite sheet not found, using vector fallback:", e);
+  }
+}
+
+function resolveSheet(cropName: string): SheetPos | null {
   const key = cropName.toLowerCase().replace(/\s+/g, "");
-  if (key.includes("paddy") || key.includes("rice")) return PALETTES.paddy;
-  if (key.includes("chilli") || key.includes("cili")) return PALETTES.chilli;
-  if (key.includes("kangkung")) return PALETTES.kangkung;
-  if (key.includes("tomato")) return PALETTES.tomato;
-  if (key.includes("corn")) return PALETTES.corn;
-  if (key.includes("banana") || key.includes("pisang")) return PALETTES.banana;
-  if (key.includes("potato") || key.includes("ubi")) return PALETTES.sweetpotato;
+  if (SHEET_MAP[key]) return SHEET_MAP[key];
+  // Fuzzy: check if any key is contained in the crop name or vice versa
+  for (const [k, v] of Object.entries(SHEET_MAP)) {
+    if (key.includes(k) || k.includes(key)) return v;
+  }
+  return null;
+}
+
+/** Slice a single 16×16 frame from the sheet via Canvas 2D. */
+function getFrame(row: number, col: number): Texture | null {
+  if (!sheetImage) return null;
+  const k = `${row}_${col}`;
+  let t = frameCache.get(k);
+  if (t) return t;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = TILE;
+  canvas.height = TILE;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.imageSmoothingEnabled = false; // crisp pixel art
+  ctx.drawImage(
+    sheetImage,
+    col * TILE, row * TILE, TILE, TILE,
+    0, 0, TILE, TILE
+  );
+
+  t = Texture.from(canvas);
+  frameCache.set(k, t);
+  return t;
+}
+
+function createSheetSprite(
+  cropName: string,
+  growthStage: string,
+  size: number
+): Sprite | null {
+  const info = resolveSheet(cropName);
+  if (!info || !sheetImage) return null;
+
+  const frameIdx = STAGE_FRAME[growthStage] ?? 0;
+  const baseCol = info.side === "left" ? 1 : 7; // skip portrait column
+  const col = baseCol + frameIdx;
+
+  const tex = getFrame(info.row, col);
+  if (!tex) return null;
+
+  const sprite = new Sprite(tex);
+  sprite.width = size;
+  sprite.height = size;
+  sprite.anchor.set(0.5);
+
+  // ── State-based visual adjustments ──
+  if (growthStage === "harvested") {
+    sprite.alpha = 0.35;
+    sprite.tint = 0x8b7355; // earthy brown
+  } else if (growthStage === "diseased") {
+    sprite.tint = 0x8b5e3c; // sick brown
+    sprite.alpha = 0.75;
+  }
+
+  // ── Substitute crop tinting (only at fruiting stages) ──
+  const key = cropName.toLowerCase().replace(/\s+/g, "");
+  const isFruiting =
+    growthStage === "mature" || growthStage === "harvest_ready";
+
+  if ((key.includes("chilli") || key.includes("cili") || key.includes("chili")) && isFruiting) {
+    sprite.tint = 0xff6b6b; // red tint for chilli
+  } else if ((key.includes("sweetpotato") || key.includes("ubi")) && isFruiting) {
+    sprite.tint = 0xe8975c; // orange tint for sweet potato
+  }
+
+  return sprite;
+}
+
+// ─── Main Entry Point ────────────────────────────────────────────
+
+/**
+ * Create a crop sprite. Tries the sprite sheet first, falls back to
+ * vector-drawn graphics for crops not in the sheet (banana, kangkung).
+ */
+export function createCropSprite(
+  app: Application,
+  cropName: string,
+  growthStage: string,
+  size: number
+): Sprite | null {
+  // Try sprite sheet first
+  const sheetSprite = createSheetSprite(cropName, growthStage, size);
+  if (sheetSprite) return sheetSprite;
+
+  // Fall back to vector drawing
+  return createVectorSprite(app, cropName, growthStage, size);
+}
+
+/** Clear all caches (call on cleanup). */
+export function clearCropSpriteCache() {
+  for (const t of frameCache.values()) t.destroy(true);
+  frameCache.clear();
+  for (const t of vectorCache.values()) t.destroy(true);
+  vectorCache.clear();
+}
+
+// ─── Vector Fallback System ──────────────────────────────────────
+
+const vectorCache = new Map<string, RenderTexture>();
+
+const PALETTES = {
+  banana:   { stem: 0x8b6914, leaf: 0x2ecc71, fruit: 0xf1c40f, ripe: 0xffd700 },
+  kangkung: { stem: 0x3a7d44, leaf: 0x27ae60, fruit: 0x2ecc71, ripe: 0x27ae60 },
+  default:  { stem: 0x6b8e23, leaf: 0x7cba3f, fruit: 0x95a5a6, ripe: 0xbdc3c7 },
+};
+
+type Pal = (typeof PALETTES)["default"];
+
+function getVectorPalette(cropName: string): Pal {
+  const k = cropName.toLowerCase();
+  if (k.includes("banana") || k.includes("pisang")) return PALETTES.banana;
+  if (k.includes("kangkung")) return PALETTES.kangkung;
   return PALETTES.default;
 }
 
-function drawSeedling(g: Graphics, w: number, h: number, pal: typeof PALETTES.default) {
-  const cx = w / 2;
-  const ground = h * 0.85;
+// ── Drawing helpers ──
 
-  // Soil mound
+function drawSeedling(g: Graphics, w: number, h: number, pal: Pal) {
+  const cx = w / 2, ground = h * 0.85;
   g.ellipse(cx, ground, w * 0.2, h * 0.06);
   g.fill({ color: 0x8b6914, alpha: 0.5 });
-
-  // Stem
   g.moveTo(cx, ground);
   g.lineTo(cx, ground - h * 0.3);
   g.stroke({ color: pal.stem, width: 2, alpha: 1 });
-
-  // Two tiny leaves
   g.ellipse(cx - w * 0.06, ground - h * 0.28, w * 0.07, h * 0.04);
   g.fill({ color: pal.leaf, alpha: 0.9 });
   g.ellipse(cx + w * 0.06, ground - h * 0.32, w * 0.07, h * 0.04);
   g.fill({ color: pal.leaf, alpha: 0.9 });
 }
 
-function drawGrowing(g: Graphics, w: number, h: number, pal: typeof PALETTES.default) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-
-  // Stem
+function drawGrowing(g: Graphics, w: number, h: number, pal: Pal) {
+  const cx = w / 2, ground = h * 0.85;
   g.moveTo(cx, ground);
   g.lineTo(cx, ground - h * 0.5);
   g.stroke({ color: pal.stem, width: 2.5, alpha: 1 });
-
-  // Multiple leaves
-  const leaves = [
+  for (const l of [
     { x: -0.1, y: -0.35, rx: 0.1, ry: 0.045 },
     { x: 0.1, y: -0.4, rx: 0.1, ry: 0.045 },
     { x: -0.08, y: -0.48, rx: 0.08, ry: 0.04 },
     { x: 0.08, y: -0.44, rx: 0.09, ry: 0.04 },
-  ];
-  for (const l of leaves) {
+  ]) {
     g.ellipse(cx + w * l.x, ground + h * l.y, w * l.rx, h * l.ry);
     g.fill({ color: pal.leaf, alpha: 0.85 });
   }
 }
 
-function drawPaddyMature(g: Graphics, w: number, h: number, pal: typeof PALETTES.paddy, ripe: boolean) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-  const col = ripe ? pal.ripe : pal.fruit;
-
-  // Multiple rice stalks
-  for (const offset of [-0.12, 0, 0.12]) {
-    const sx = cx + w * offset;
-    g.moveTo(sx, ground);
-    g.lineTo(sx, ground - h * 0.55);
-    g.stroke({ color: ripe ? 0xbfa33a : pal.stem, width: 2, alpha: 1 });
-
-    // Grain head (drooping)
-    g.moveTo(sx, ground - h * 0.55);
-    g.quadraticCurveTo(sx + w * 0.08, ground - h * 0.6, sx + w * 0.12, ground - h * 0.5);
-    g.stroke({ color: col, width: 3, alpha: 0.9 });
-
-    // Grain dots
-    for (let i = 0; i < 3; i++) {
-      g.circle(sx + w * (0.04 + i * 0.03), ground - h * (0.52 + i * 0.02), 1.5);
-      g.fill({ color: col, alpha: 1 });
-    }
-  }
-}
-
-function drawChilliMature(g: Graphics, w: number, h: number, pal: typeof PALETTES.chilli, ripe: boolean) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-
-  // Bush stem
-  g.moveTo(cx, ground);
-  g.lineTo(cx, ground - h * 0.45);
-  g.stroke({ color: pal.stem, width: 2.5, alpha: 1 });
-
-  // Leaves
-  g.ellipse(cx - w * 0.12, ground - h * 0.35, w * 0.1, h * 0.04);
-  g.fill({ color: pal.leaf, alpha: 0.8 });
-  g.ellipse(cx + w * 0.12, ground - h * 0.4, w * 0.1, h * 0.04);
-  g.fill({ color: pal.leaf, alpha: 0.8 });
-
-  // Chilli peppers (hanging down)
-  const col = ripe ? pal.ripe : pal.fruit;
-  for (const pos of [{ x: -0.06, y: -0.42 }, { x: 0.08, y: -0.38 }, { x: 0.0, y: -0.5 }]) {
-    g.roundRect(cx + w * pos.x - 2, ground + h * pos.y, 4, h * 0.12, 2);
-    g.fill({ color: col, alpha: 0.95 });
-  }
-}
-
-function drawTomatoMature(g: Graphics, w: number, h: number, pal: typeof PALETTES.tomato, ripe: boolean) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-
-  // Stem/stake
-  g.moveTo(cx, ground);
-  g.lineTo(cx, ground - h * 0.55);
-  g.stroke({ color: 0x8b6914, width: 2, alpha: 0.7 });
-
-  // Vine
-  g.moveTo(cx, ground - h * 0.3);
-  g.lineTo(cx, ground - h * 0.5);
-  g.stroke({ color: pal.stem, width: 2.5, alpha: 1 });
-
-  // Leaves
-  g.ellipse(cx - w * 0.1, ground - h * 0.4, w * 0.09, h * 0.035);
-  g.fill({ color: pal.leaf, alpha: 0.8 });
-  g.ellipse(cx + w * 0.1, ground - h * 0.45, w * 0.09, h * 0.035);
-  g.fill({ color: pal.leaf, alpha: 0.8 });
-
-  // Tomatoes
-  const col = ripe ? pal.ripe : pal.fruit;
-  g.circle(cx - w * 0.05, ground - h * 0.32, w * 0.06);
-  g.fill({ color: col, alpha: 0.95 });
-  g.circle(cx + w * 0.07, ground - h * 0.36, w * 0.055);
-  g.fill({ color: col, alpha: 0.95 });
-}
-
-function drawCornMature(g: Graphics, w: number, h: number, pal: typeof PALETTES.corn, ripe: boolean) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-
-  // Tall stalk
-  g.moveTo(cx, ground);
-  g.lineTo(cx, ground - h * 0.65);
-  g.stroke({ color: pal.stem, width: 3, alpha: 1 });
-
-  // Long leaves
-  g.moveTo(cx, ground - h * 0.3);
-  g.quadraticCurveTo(cx - w * 0.2, ground - h * 0.35, cx - w * 0.22, ground - h * 0.25);
-  g.stroke({ color: pal.leaf, width: 2.5, alpha: 0.8 });
-
-  g.moveTo(cx, ground - h * 0.4);
-  g.quadraticCurveTo(cx + w * 0.18, ground - h * 0.45, cx + w * 0.2, ground - h * 0.35);
-  g.stroke({ color: pal.leaf, width: 2.5, alpha: 0.8 });
-
-  // Corn ear
-  const col = ripe ? pal.ripe : pal.fruit;
-  g.roundRect(cx - 3, ground - h * 0.55, 6, h * 0.14, 3);
-  g.fill({ color: col, alpha: 0.95 });
-
-  // Tassel on top
-  g.moveTo(cx, ground - h * 0.65);
-  g.lineTo(cx - 3, ground - h * 0.72);
-  g.moveTo(cx, ground - h * 0.65);
-  g.lineTo(cx + 3, ground - h * 0.72);
-  g.moveTo(cx, ground - h * 0.65);
-  g.lineTo(cx, ground - h * 0.73);
-  g.stroke({ color: 0xbfa33a, width: 1.5, alpha: 0.8 });
-}
-
-function drawBananaMature(g: Graphics, w: number, h: number, pal: typeof PALETTES.banana, ripe: boolean) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-
-  // Trunk
+function drawBananaMature(g: Graphics, w: number, h: number, pal: Pal, ripe: boolean) {
+  const cx = w / 2, ground = h * 0.85;
   g.roundRect(cx - 3, ground - h * 0.6, 6, h * 0.6, 2);
   g.fill({ color: pal.stem, alpha: 0.9 });
-
-  // Large drooping leaves
   g.moveTo(cx, ground - h * 0.55);
   g.quadraticCurveTo(cx - w * 0.25, ground - h * 0.65, cx - w * 0.2, ground - h * 0.45);
   g.stroke({ color: pal.leaf, width: 3, alpha: 0.85 });
@@ -200,22 +253,35 @@ function drawBananaMature(g: Graphics, w: number, h: number, pal: typeof PALETTE
   g.moveTo(cx, ground - h * 0.58);
   g.quadraticCurveTo(cx, ground - h * 0.75, cx - w * 0.05, ground - h * 0.7);
   g.stroke({ color: pal.leaf, width: 2.5, alpha: 0.85 });
-
-  // Banana bunch
   const col = ripe ? pal.ripe : 0x7cba3f;
   g.ellipse(cx, ground - h * 0.4, w * 0.08, h * 0.06);
   g.fill({ color: col, alpha: 0.9 });
 }
 
-function drawGenericMature(g: Graphics, w: number, h: number, pal: typeof PALETTES.default, ripe: boolean) {
-  const cx = w / 2;
-  const ground = h * 0.85;
+function drawKangkungMature(g: Graphics, w: number, h: number, pal: Pal, ripe: boolean) {
+  const cx = w / 2, ground = h * 0.85;
+  // Dense leafy bush
+  g.moveTo(cx, ground);
+  g.lineTo(cx, ground - h * 0.4);
+  g.stroke({ color: pal.stem, width: 2, alpha: 1 });
+  const col = ripe ? pal.ripe : pal.leaf;
+  for (const l of [
+    { x: 0, y: -0.5, rx: 0.14, ry: 0.06 },
+    { x: -0.1, y: -0.42, rx: 0.12, ry: 0.05 },
+    { x: 0.1, y: -0.44, rx: 0.12, ry: 0.05 },
+    { x: -0.06, y: -0.36, rx: 0.1, ry: 0.045 },
+    { x: 0.08, y: -0.38, rx: 0.1, ry: 0.045 },
+  ]) {
+    g.ellipse(cx + w * l.x, ground + h * l.y, w * l.rx, h * l.ry);
+    g.fill({ color: col, alpha: 0.8 });
+  }
+}
 
+function drawGenericMature(g: Graphics, w: number, h: number, pal: Pal, ripe: boolean) {
+  const cx = w / 2, ground = h * 0.85;
   g.moveTo(cx, ground);
   g.lineTo(cx, ground - h * 0.5);
   g.stroke({ color: pal.stem, width: 2.5, alpha: 1 });
-
-  // Leafy top
   const col = ripe ? pal.ripe : pal.leaf;
   g.circle(cx, ground - h * 0.52, w * 0.14);
   g.fill({ color: col, alpha: 0.8 });
@@ -226,14 +292,9 @@ function drawGenericMature(g: Graphics, w: number, h: number, pal: typeof PALETT
 }
 
 function drawHarvested(g: Graphics, w: number, h: number) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-
-  // Bare soil with stubble
+  const cx = w / 2, ground = h * 0.85;
   g.ellipse(cx, ground, w * 0.25, h * 0.06);
   g.fill({ color: 0x8b6914, alpha: 0.4 });
-
-  // Small stubble marks
   for (const ox of [-0.08, 0, 0.08]) {
     g.moveTo(cx + w * ox, ground);
     g.lineTo(cx + w * ox, ground - h * 0.06);
@@ -242,36 +303,23 @@ function drawHarvested(g: Graphics, w: number, h: number) {
 }
 
 function drawDiseased(g: Graphics, w: number, h: number) {
-  const cx = w / 2;
-  const ground = h * 0.85;
-
-  // Wilted stem
+  const cx = w / 2, ground = h * 0.85;
   g.moveTo(cx, ground);
   g.quadraticCurveTo(cx + w * 0.05, ground - h * 0.25, cx - w * 0.02, ground - h * 0.4);
   g.stroke({ color: 0x8b6c42, width: 2.5, alpha: 0.8 });
-
-  // Brown wilted leaves
   g.ellipse(cx - w * 0.08, ground - h * 0.32, w * 0.08, h * 0.035);
   g.fill({ color: 0xa0522d, alpha: 0.7 });
   g.ellipse(cx + w * 0.06, ground - h * 0.38, w * 0.07, h * 0.03);
   g.fill({ color: 0x8b4513, alpha: 0.6 });
-
-  // Spots
   g.circle(cx - w * 0.04, ground - h * 0.35, 2);
   g.fill({ color: 0x4a2810, alpha: 0.8 });
   g.circle(cx + w * 0.05, ground - h * 0.3, 1.5);
   g.fill({ color: 0x4a2810, alpha: 0.7 });
 }
 
-function drawCropGraphics(
-  g: Graphics,
-  cropName: string,
-  growthStage: string,
-  w: number,
-  h: number
-) {
-  const pal = getPalette(cropName);
-  const crop = cropName.toLowerCase().replace(/\s+/g, "");
+function drawVectorCrop(g: Graphics, cropName: string, growthStage: string, w: number, h: number) {
+  const pal = getVectorPalette(cropName);
+  const crop = cropName.toLowerCase();
 
   switch (growthStage) {
     case "seedling":
@@ -289,16 +337,10 @@ function drawCropGraphics(
     case "mature":
     case "harvest_ready": {
       const ripe = growthStage === "harvest_ready";
-      if (crop.includes("paddy") || crop.includes("rice"))
-        drawPaddyMature(g, w, h, pal as typeof PALETTES.paddy, ripe);
-      else if (crop.includes("chilli") || crop.includes("cili"))
-        drawChilliMature(g, w, h, pal as typeof PALETTES.chilli, ripe);
-      else if (crop.includes("tomato"))
-        drawTomatoMature(g, w, h, pal as typeof PALETTES.tomato, ripe);
-      else if (crop.includes("corn"))
-        drawCornMature(g, w, h, pal as typeof PALETTES.corn, ripe);
-      else if (crop.includes("banana") || crop.includes("pisang"))
-        drawBananaMature(g, w, h, pal as typeof PALETTES.banana, ripe);
+      if (crop.includes("banana") || crop.includes("pisang"))
+        drawBananaMature(g, w, h, pal, ripe);
+      else if (crop.includes("kangkung"))
+        drawKangkungMature(g, w, h, pal, ripe);
       else drawGenericMature(g, w, h, pal, ripe);
       break;
     }
@@ -307,30 +349,21 @@ function drawCropGraphics(
   }
 }
 
-/**
- * Creates a cached sprite for a given crop + growth stage at the given size.
- * Uses RenderTexture for GPU-efficient rendering.
- */
-export function createCropSprite(
+function createVectorSprite(
   app: Application,
   cropName: string,
   growthStage: string,
   size: number
 ): Sprite | null {
-  if (growthStage === "harvested") {
-    // Still show stubble for harvested
-  }
-
-  const cacheKey = `${cropName}_${growthStage}_${size}`;
-  let texture = spriteCache.get(cacheKey);
+  const cacheKey = `vec_${cropName}_${growthStage}_${size}`;
+  let texture = vectorCache.get(cacheKey);
 
   if (!texture) {
     const g = new Graphics();
-    drawCropGraphics(g, cropName, growthStage, size, size);
-
+    drawVectorCrop(g, cropName, growthStage, size, size);
     texture = RenderTexture.create({ width: size, height: size });
     app.renderer.render({ container: g, target: texture });
-    spriteCache.set(cacheKey, texture);
+    vectorCache.set(cacheKey, texture);
     g.destroy();
   }
 
@@ -339,12 +372,4 @@ export function createCropSprite(
   sprite.height = size;
   sprite.anchor.set(0.5);
   return sprite;
-}
-
-/** Clear the sprite cache (call on cleanup) */
-export function clearCropSpriteCache() {
-  for (const tex of spriteCache.values()) {
-    tex.destroy(true);
-  }
-  spriteCache.clear();
 }

@@ -2,16 +2,81 @@ import { Application, Graphics, Container } from "pixi.js";
 import type { GridJson } from "@/types/farm";
 import { generateTilePositions } from "./gridGenerator";
 import { addWarningOverlay, removeWarningOverlay } from "./tileSprites";
-import { createCropSprite, clearCropSpriteCache } from "./cropSprites";
+import {
+  createCropSprite,
+  clearCropSpriteCache,
+  loadCropSpriteSheet,
+} from "./cropSprites";
 import { WeatherLayer } from "./weatherEffects";
 
 export interface RendererOptions {
   weatherCondition?: string;
-  /** Map of plot label → { cropName, growthStage } for sprite rendering */
   plotStages?: Record<string, { cropName: string; growthStage: string }>;
-  /** Map of plot label → { warningLevel, warningReason } for warning overlays */
-  plotWarnings?: Record<string, { warningLevel: string; warningReason: string }>;
+  plotWarnings?: Record<
+    string,
+    { warningLevel: string; warningReason: string }
+  >;
 }
+
+// ─── Hex helpers ─────────────────────────────────────────────────
+
+const SQRT3_2 = Math.sqrt(3) / 2;
+
+/** Return the 6 vertices of a pointy-top hex centred at (cx, cy) with outer radius r. */
+function hexVertices(
+  cx: number,
+  cy: number,
+  r: number
+): { x: number; y: number }[] {
+  return [
+    { x: cx, y: cy - r }, //               0  top
+    { x: cx + r * SQRT3_2, y: cy - r / 2 }, // 1  top-right
+    { x: cx + r * SQRT3_2, y: cy + r / 2 }, // 2  bottom-right
+    { x: cx, y: cy + r }, //               3  bottom
+    { x: cx - r * SQRT3_2, y: cy + r / 2 }, // 4  bottom-left
+    { x: cx - r * SQRT3_2, y: cy - r / 2 }, // 5  top-left
+  ];
+}
+
+/** Draw a filled hex path on a Graphics object. */
+function drawHexPath(g: Graphics, verts: { x: number; y: number }[]) {
+  g.moveTo(verts[0].x, verts[0].y);
+  for (let i = 1; i < 6; i++) g.lineTo(verts[i].x, verts[i].y);
+  g.closePath();
+}
+
+/**
+ * Pointy-top hex neighbor for even-r offset coordinates.
+ * Direction 0 = top-right, going clockwise.
+ * Edge *dir* connects vertex[dir] → vertex[(dir+1)%6].
+ */
+const EVEN_OFFSETS = [
+  [-1, 0], // 0 top-right
+  [0, 1], //  1 right
+  [1, 0], //  2 bottom-right
+  [1, -1], // 3 bottom-left
+  [0, -1], // 4 left
+  [-1, -1], // 5 top-left
+];
+const ODD_OFFSETS = [
+  [-1, 1], // 0 top-right
+  [0, 1], //  1 right
+  [1, 1], //  2 bottom-right
+  [1, 0], //  3 bottom-left
+  [0, -1], // 4 left
+  [-1, 0], // 5 top-left
+];
+
+function hexNeighbor(
+  row: number,
+  col: number,
+  dir: number
+): [number, number] {
+  const off = row % 2 === 0 ? EVEN_OFFSETS[dir] : ODD_OFFSETS[dir];
+  return [row + off[0], col + off[1]];
+}
+
+// ─── Renderer ────────────────────────────────────────────────────
 
 export async function initRenderer(
   container: HTMLDivElement,
@@ -30,6 +95,8 @@ export async function initRenderer(
   container.appendChild(app.canvas);
   app.ticker.maxFPS = 30;
 
+  await loadCropSpriteSheet();
+
   const tileContainer = new Container();
   const spriteContainer = new Container();
   const warningContainer = new Container();
@@ -37,128 +104,130 @@ export async function initRenderer(
   app.stage.addChild(spriteContainer);
   app.stage.addChild(warningContainer);
 
-  // Weather layer — added on top of everything
   let weatherLayer: WeatherLayer | null = null;
   if (options?.weatherCondition) {
     weatherLayer = new WeatherLayer(app, options.weatherCondition);
   }
 
-  // Track warning overlay containers for cleanup
   const warningOverlays: Container[] = [];
 
   function draw() {
     tileContainer.removeChildren();
     spriteContainer.removeChildren();
-    // Clean up warning overlays (remove ticker callbacks)
-    for (const w of warningOverlays) {
-      removeWarningOverlay(w, app.ticker);
-    }
+    for (const wo of warningOverlays) removeWarningOverlay(wo, app.ticker);
     warningOverlays.length = 0;
     warningContainer.removeChildren();
 
-    const w = app.screen.width;
-    const h = app.screen.height;
     const { tiles, tileWidth, tileHeight } = generateTilePositions(
       gridJson,
-      w,
-      h
+      app.screen.width,
+      app.screen.height
     );
+
+    const hexR = tileHeight / 2; // outer radius
+    const gridSize = gridJson.grid.length;
+
+    function plotAt(r: number, c: number): string {
+      if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) return "__edge__";
+      return gridJson.grid[r][c];
+    }
+
+    // Deterministic hash for sprite scattering
+    function tileHash(r: number, c: number): number {
+      return ((r * 2654435761) ^ (c * 2246822519)) >>> 0;
+    }
 
     for (const tile of tiles) {
       const g = new Graphics();
-
-      // Diamond vertices
-      const topX = tile.screenX + tileWidth / 2;
-      const topY = tile.screenY;
-      const rightX = tile.screenX + tileWidth;
-      const rightY = tile.screenY + tileHeight / 2;
-      const bottomX = tile.screenX + tileWidth / 2;
-      const bottomY = tile.screenY + tileHeight;
-      const leftX = tile.screenX;
-      const leftY = tile.screenY + tileHeight / 2;
-
-      // Draw diamond
-      g.moveTo(topX, topY);
-      g.lineTo(rightX, rightY);
-      g.lineTo(bottomX, bottomY);
-      g.lineTo(leftX, leftY);
-      g.closePath();
+      const verts = hexVertices(tile.centerX, tile.centerY, hexR);
 
       if (tile.isActive) {
         const stage = options?.plotStages?.[tile.plotLabel];
         const isHarvested = stage?.growthStage === "harvested";
-        const fillAlpha = isHarvested ? 0.5 : 0.85;
+        const fillAlpha = isHarvested ? 0.6 : 0.92;
 
+        // Filled hex with subtle internal border
+        drawHexPath(g, verts);
         g.fill({ color: tile.colour, alpha: fillAlpha });
-        g.stroke({ color: tile.colour, width: 1.5, alpha: 0.7 });
+        g.stroke({ color: tile.colour, width: 1, alpha: 0.5 });
+
+        // Thicker border at plot boundaries (6 hex edges)
+        let hasBorder = false;
+        for (let dir = 0; dir < 6; dir++) {
+          const [nr, nc] = hexNeighbor(tile.row, tile.col, dir);
+          if (plotAt(nr, nc) !== tile.plotLabel) {
+            const v1 = verts[dir];
+            const v2 = verts[(dir + 1) % 6];
+            g.moveTo(v1.x, v1.y);
+            g.lineTo(v2.x, v2.y);
+            hasBorder = true;
+          }
+        }
+        if (hasBorder) {
+          g.stroke({ color: 0x1a3d12, width: 2, alpha: 0.5 });
+        }
       } else {
-        g.fill({ color: 0xcccccc, alpha: 0.3 });
-        g.stroke({ color: 0xaaaaaa, width: 1, alpha: 0.4 });
+        // Inactive — very subtle
+        drawHexPath(g, verts);
+        g.fill({ color: 0xcccccc, alpha: 0.15 });
+        g.stroke({ color: 0xaaaaaa, width: 0.5, alpha: 0.2 });
       }
 
+      // Click interaction
       if (tile.isActive && onTileClick) {
         g.eventMode = "static";
         g.cursor = "pointer";
-
-        const originalColour = tile.colour;
+        const oc = tile.colour;
 
         g.on("pointerdown", () => {
           onTileClick(tile.plotLabel);
           g.clear();
-          g.moveTo(topX, topY);
-          g.lineTo(rightX, rightY);
-          g.lineTo(bottomX, bottomY);
-          g.lineTo(leftX, leftY);
-          g.closePath();
-          g.fill({ color: 0xffffff, alpha: 0.5 });
-          g.stroke({ color: originalColour, width: 2, alpha: 1 });
+          drawHexPath(g, verts);
+          g.fill({ color: 0xffffff, alpha: 0.4 });
+          g.stroke({ color: oc, width: 2, alpha: 0.8 });
         });
 
-        g.on("pointerup", () => {
+        const restore = () => {
           g.clear();
-          g.moveTo(topX, topY);
-          g.lineTo(rightX, rightY);
-          g.lineTo(bottomX, bottomY);
-          g.lineTo(leftX, leftY);
-          g.closePath();
-          g.fill({ color: originalColour, alpha: 0.85 });
-          g.stroke({ color: originalColour, width: 1.5, alpha: 0.7 });
-        });
-
-        g.on("pointerupoutside", () => {
-          g.clear();
-          g.moveTo(topX, topY);
-          g.lineTo(rightX, rightY);
-          g.lineTo(bottomX, bottomY);
-          g.lineTo(leftX, leftY);
-          g.closePath();
-          g.fill({ color: originalColour, alpha: 0.85 });
-          g.stroke({ color: originalColour, width: 1.5, alpha: 0.7 });
-        });
+          const st = options?.plotStages?.[tile.plotLabel];
+          const harv = st?.growthStage === "harvested";
+          drawHexPath(g, verts);
+          g.fill({ color: oc, alpha: harv ? 0.6 : 0.92 });
+        };
+        g.on("pointerup", restore);
+        g.on("pointerupoutside", restore);
       }
 
       tileContainer.addChild(g);
 
-      // Add crop sprite for active tiles
+      // Crop sprites — scattered on ~55% of tiles
       if (tile.isActive && options?.plotStages) {
         const stage = options.plotStages[tile.plotLabel];
         if (stage) {
-          // Use diseased sprite if warning_level is red
-          const warning = options.plotWarnings?.[tile.plotLabel];
-          const effectiveStage =
-            warning?.warningLevel === "red" ? "diseased" : stage.growthStage;
-          const spriteSize = Math.max(16, Math.round(tileWidth * 0.55));
-          const sprite = createCropSprite(app, stage.cropName, effectiveStage, spriteSize);
-          if (sprite) {
-            sprite.x = tile.screenX + tileWidth / 2;
-            sprite.y =
-              tile.screenY + tileHeight / 2 - tileHeight * 0.15;
-            spriteContainer.addChild(sprite);
+          const h = tileHash(tile.row, tile.col);
+          if ((h % 100) < 55) {
+            const warning = options.plotWarnings?.[tile.plotLabel];
+            const effectiveStage =
+              warning?.warningLevel === "red" ? "diseased" : stage.growthStage;
+            const spriteSize = Math.max(16, Math.round(tileWidth * 0.5));
+            const sprite = createCropSprite(
+              app,
+              stage.cropName,
+              effectiveStage,
+              spriteSize
+            );
+            if (sprite) {
+              const jx = ((h % 7) - 3) * tileWidth * 0.03;
+              const jy = (((h >> 3) % 5) - 2) * tileHeight * 0.03;
+              sprite.x = tile.centerX + jx;
+              sprite.y = tile.centerY + jy;
+              spriteContainer.addChild(sprite);
+            }
           }
         }
       }
 
-      // Add warning overlay for active tiles with warnings
+      // Warning overlays
       if (tile.isActive && options?.plotWarnings) {
         const warning = options.plotWarnings[tile.plotLabel];
         if (warning && warning.warningLevel !== "none") {
@@ -179,13 +248,9 @@ export async function initRenderer(
 
   draw();
 
-  // Redraw on resize
-  const resizeObserver = new ResizeObserver(() => {
-    draw();
-  });
+  const resizeObserver = new ResizeObserver(() => draw());
   resizeObserver.observe(container);
 
-  // Store cleanup refs
   const meta = app as unknown as Record<string, unknown>;
   meta._resizeObserver = resizeObserver;
   meta._weatherLayer = weatherLayer;
