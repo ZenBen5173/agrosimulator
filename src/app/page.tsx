@@ -82,9 +82,8 @@ export default function WelcomePage() {
           </button>
         </form>
 
-        {/* Dev-only instant login (bypasses email) */}
-        {process.env.NODE_ENV !== "production" && (
-          <button
+        {/* Instant login (bypasses email OTP — for demo) */}
+        <button
             onClick={async () => {
               const trimmed = email.trim().toLowerCase();
               if (!trimmed || !trimmed.includes("@")) {
@@ -109,9 +108,8 @@ export default function WelcomePage() {
             disabled={loading}
             className="w-full rounded-lg border border-dashed border-gray-400 py-3 text-sm text-gray-500 hover:bg-gray-100"
           >
-            Dev: Instant Login (skip email)
+            Instant Login (skip email)
           </button>
-        )}
       </div>
     </div>
   );
