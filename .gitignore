@@ -34,9 +34,17 @@ yarn-error.log*
 .env*
 !.env.example
 
+# synced from Notion — do not edit manually
+CLAUDE.md
+
+# Claude Code
+.claude/
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel

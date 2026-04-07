@@ -1,3 +1,5 @@
+@import "leaflet/dist/leaflet.css";
+@import "leaflet-draw/dist/leaflet.draw.css";
 @import "tailwindcss";
 
 :root {
@@ -23,4 +25,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Hide Leaflet Draw toolbar and tooltip — we auto-start polygon mode */
+.leaflet-draw-toolbar,
+.leaflet-draw-actions,
+.leaflet-draw-tooltip {
+  display: none !important;
 }
