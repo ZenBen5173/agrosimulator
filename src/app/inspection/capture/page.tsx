@@ -145,13 +145,21 @@ function CaptureFlow() {
         <button
           onClick={() => router.back()}
           className="mb-4 text-sm text-gray-500"
+          aria-label="Go back"
         >
           ← Back
         </button>
         <h1 className="text-xl font-bold text-gray-900">
           Photo {currentStep + 1} of 3
         </h1>
-        <div className="mt-2 flex gap-2">
+        <div
+          className="mt-2 flex gap-2"
+          role="progressbar"
+          aria-valuenow={currentStep + 1}
+          aria-valuemin={1}
+          aria-valuemax={3}
+          aria-label={`Photo ${currentStep + 1} of 3`}
+        >
           {[0, 1, 2].map((i) => (
             <div
               key={i}
@@ -170,7 +178,7 @@ function CaptureFlow() {
       {/* Current photo slot */}
       <div className="mb-6">
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-xl">{PHOTO_LABELS[currentStep].icon}</span>
+          <span className="text-xl" aria-hidden="true">{PHOTO_LABELS[currentStep].icon}</span>
           <div>
             <p className="font-medium text-gray-800">
               {PHOTO_LABELS[currentStep].title}
@@ -205,8 +213,9 @@ function CaptureFlow() {
             <button
               onClick={() => fileInputRef.current?.click()}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-green-600 text-3xl text-white shadow-lg"
+              aria-label="Take photo"
             >
-              📷
+              <span aria-hidden="true">📷</span>
             </button>
             <p className="text-sm font-medium text-gray-700">Take a photo</p>
             <button
@@ -257,7 +266,7 @@ function CaptureFlow() {
                 className="h-full w-full object-cover"
               />
             ) : (
-              <span className="text-xl text-gray-300">
+              <span className="text-xl text-gray-300" aria-hidden="true">
                 {PHOTO_LABELS[i].icon}
               </span>
             )}

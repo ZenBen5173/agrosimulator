@@ -1,86 +1,97 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { GridJson } from "@/types/farm";
 
-const FarmCanvas = dynamic(() => import("@/components/FarmCanvas"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full items-center justify-center bg-sky-100">
-      <p className="text-green-700">Loading farm view...</p>
-    </div>
-  ),
-});
+interface ZoneRow {
+  id: string;
+  zone_label: string;
+  suggested_crop: string;
+  crop_override: string | null;
+  colour_hex: string;
+  area_sqm: number;
+}
 
-export default function ConfirmPage() {
+function ConfirmForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
-  const [gridJson, setGridJson] = useState<GridJson | null>(null);
-  const [farmId, setFarmId] = useState<string | null>(null);
+  const farmId = searchParams.get("farm_id");
+
+  const [zones, setZones] = useState<ZoneRow[]>([]);
   const [plantMode, setPlantMode] = useState<"fresh" | "existing">("fresh");
   const [plotDates, setPlotDates] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("plotLayout");
-    const storedFarmId = sessionStorage.getItem("plotLayoutFarmId");
-
-    if (!stored || !storedFarmId) {
+    if (!farmId) {
       router.replace("/onboarding/map");
       return;
     }
 
-    try {
-      const parsed: GridJson = JSON.parse(stored);
-      setGridJson(parsed);
-      setFarmId(storedFarmId);
+    async function loadZones() {
+      const { data } = await supabase
+        .from("farm_zones")
+        .select("id, zone_label, suggested_crop, crop_override, colour_hex, area_sqm")
+        .eq("farm_id", farmId)
+        .order("zone_label");
 
-      // Initialise dates for each plot to today
+      if (!data || data.length === 0) {
+        // No zones — fallback: just mark onboarding done
+        await supabase
+          .from("farms")
+          .update({ onboarding_done: true })
+          .eq("id", farmId);
+        router.push("/home");
+        return;
+      }
+
+      setZones(data);
+
+      // Initialize dates for each zone
       const today = new Date().toISOString().split("T")[0];
       const dates: Record<string, string> = {};
-      for (const label of Object.keys(parsed.plots)) {
-        dates[label] = today;
+      for (const z of data) {
+        dates[z.zone_label] = today;
       }
       setPlotDates(dates);
-    } catch {
-      router.replace("/onboarding/map");
+      setLoading(false);
     }
-  }, [router]);
+
+    loadZones();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farmId]);
 
   async function handleLaunch() {
-    if (!gridJson || !farmId) return;
+    if (!farmId || zones.length === 0) return;
     setSaving(true);
     setError("");
 
     try {
       const today = new Date().toISOString().split("T")[0];
 
-      // 1. Insert plots
-      const plotRows = Object.entries(gridJson.plots).map(
-        ([label, info]) => ({
-          farm_id: farmId,
-          label,
-          crop_name: info.crop,
-          growth_stage: "seedling",
-          planted_date:
-            plantMode === "fresh" ? today : plotDates[label] || today,
-          colour_hex: info.colour,
-          is_active: true,
-          warning_level: "none",
-          risk_score: 0,
-          ai_placement_reason: info.reason,
-        })
-      );
+      // 1. Create plots from zones
+      const plotRows = zones.map((z) => ({
+        farm_id: farmId,
+        label: z.zone_label,
+        crop_name: z.crop_override || z.suggested_crop,
+        growth_stage: "seedling",
+        planted_date:
+          plantMode === "fresh" ? today : plotDates[z.zone_label] || today,
+        colour_hex: z.colour_hex,
+        is_active: true,
+        warning_level: "none",
+        risk_score: 0,
+        ai_placement_reason: `Zone ${z.zone_label} — ${(z.area_sqm / 4046.86).toFixed(1)} acres`,
+      }));
 
-      const { data: insertedPlots, error: plotError } = await supabase
+      const { error: plotError } = await supabase
         .from("plots")
-        .insert(plotRows)
-        .select("id, label");
+        .insert(plotRows);
 
       if (plotError) {
         console.error("Plot insert error:", plotError);
@@ -89,49 +100,7 @@ export default function ConfirmPage() {
         return;
       }
 
-      // Build label → plot id map
-      const plotIdMap: Record<string, string> = {};
-      if (insertedPlots) {
-        for (const p of insertedPlots) {
-          plotIdMap[p.label] = p.id;
-        }
-      }
-
-      // 2. Insert grid cells
-      const cellRows: {
-        farm_id: string;
-        row: number;
-        col: number;
-        is_active: boolean;
-        plot_id: string | null;
-      }[] = [];
-
-      for (let r = 0; r < gridJson.grid.length; r++) {
-        for (let c = 0; c < gridJson.grid[r].length; c++) {
-          const label = gridJson.grid[r][c];
-          const isActive = label !== "out";
-          cellRows.push({
-            farm_id: farmId,
-            row: r,
-            col: c,
-            is_active: isActive,
-            plot_id: isActive ? plotIdMap[label] || null : null,
-          });
-        }
-      }
-
-      const { error: cellError } = await supabase
-        .from("grid_cells")
-        .insert(cellRows);
-
-      if (cellError) {
-        console.error("Grid cell insert error:", cellError);
-        setError("Failed to save grid. Please try again.");
-        setSaving(false);
-        return;
-      }
-
-      // 3. Mark farm as onboarding complete
+      // 2. Mark farm as onboarding complete
       const { error: farmError } = await supabase
         .from("farms")
         .update({ onboarding_done: true })
@@ -141,11 +110,6 @@ export default function ConfirmPage() {
         console.error("Farm update error:", farmError);
       }
 
-      // Clean up sessionStorage
-      sessionStorage.removeItem("plotLayout");
-      sessionStorage.removeItem("plotLayoutFarmId");
-
-      // Navigate to home
       router.push("/home");
     } catch (err) {
       console.error("Launch error:", err);
@@ -154,7 +118,7 @@ export default function ConfirmPage() {
     }
   }
 
-  if (!gridJson) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-green-50">
         <p className="text-lg text-green-700">Loading...</p>
@@ -162,35 +126,50 @@ export default function ConfirmPage() {
     );
   }
 
-  const plotEntries = Object.entries(gridJson.plots);
-
   return (
     <div className="flex min-h-screen flex-col bg-green-50">
       {/* Header */}
-      <div className="px-4 pt-4 pb-2">
+      <div className="px-4 pt-6 pb-2">
         <h1 className="text-center text-xl font-bold text-green-800">
           Confirm Your Farm
         </h1>
         <p className="mt-1 text-center text-sm text-gray-500">
-          Review your layout and set planting dates
+          {zones.length} zone{zones.length !== 1 ? "s" : ""} ready to plant
         </p>
       </div>
 
-      {/* Farm Canvas — read only, smaller */}
-      <div
-        className="mx-2 overflow-hidden rounded-2xl"
-        style={{ height: "40vh" }}
-      >
-        <FarmCanvas gridJson={gridJson} className="h-full w-full" />
+      {/* Zone summary */}
+      <div className="mx-4 mt-3 space-y-2">
+        {zones.map((z) => (
+          <div
+            key={z.id}
+            className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm"
+          >
+            <div
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+              style={{ backgroundColor: z.colour_hex }}
+              aria-label={`Zone ${z.zone_label}`}
+            >
+              {z.zone_label}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-800">
+                {z.crop_override || z.suggested_crop}
+              </p>
+              <p className="text-xs text-gray-500">
+                {(z.area_sqm / 4046.86).toFixed(2)} acres
+              </p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Planting date section */}
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-32">
+      <div className="flex-1 overflow-y-auto px-4 pt-5 pb-32">
         <h2 className="mb-3 text-lg font-bold text-gray-800">
           When did you plant these crops?
         </h2>
 
-        {/* Radio options */}
         <div className="space-y-2">
           <label
             className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-4 transition-colors ${
@@ -237,34 +216,35 @@ export default function ConfirmPage() {
                 I already have crops growing
               </p>
               <p className="text-sm text-gray-500">
-                Set a planting date for each plot
+                Set a planting date for each zone
               </p>
             </div>
           </label>
         </div>
 
-        {/* Per-plot date pickers */}
+        {/* Per-zone date pickers */}
         {plantMode === "existing" && (
           <div className="mt-4 space-y-3">
-            {plotEntries.map(([label, info]) => (
+            {zones.map((z) => (
               <div
-                key={label}
+                key={z.id}
                 className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm"
               >
                 <span
                   className="h-4 w-4 flex-shrink-0 rounded-full border border-gray-200"
-                  style={{ backgroundColor: info.colour }}
+                  style={{ backgroundColor: z.colour_hex }}
                 />
                 <span className="flex-1 text-sm font-medium text-gray-800">
-                  {label} — {info.crop}
+                  {z.zone_label} — {z.crop_override || z.suggested_crop}
                 </span>
                 <input
                   type="date"
-                  value={plotDates[label] || ""}
+                  aria-label={`Planting date for zone ${z.zone_label}`}
+                  value={plotDates[z.zone_label] || ""}
                   onChange={(e) =>
                     setPlotDates((prev) => ({
                       ...prev,
-                      [label]: e.target.value,
+                      [z.zone_label]: e.target.value,
                     }))
                   }
                   className="rounded-lg border border-gray-300 px-2 py-1.5 text-base"
@@ -275,7 +255,7 @@ export default function ConfirmPage() {
         )}
 
         {error && (
-          <p className="mt-4 text-center text-sm text-red-600">{error}</p>
+          <p role="alert" aria-live="assertive" className="mt-4 text-center text-sm text-red-600">{error}</p>
         )}
       </div>
 
@@ -287,11 +267,25 @@ export default function ConfirmPage() {
         <button
           onClick={handleLaunch}
           disabled={saving}
-          className="mx-auto block w-full max-w-md rounded-xl bg-green-600 py-4 text-lg font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-green-400"
+          className="mx-auto block w-full max-w-md rounded-xl bg-green-600 py-4 text-lg font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-green-500"
         >
-          {saving ? "Setting up your farm..." : "Launch my farm 🌾"}
+          {saving ? "Setting up your farm..." : "Launch my farm"}
         </button>
       </div>
     </div>
+  );
+}
+
+export default function ConfirmPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-green-50">
+          <p className="text-lg text-green-700">Loading...</p>
+        </div>
+      }
+    >
+      <ConfirmForm />
+    </Suspense>
   );
 }

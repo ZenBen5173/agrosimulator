@@ -122,7 +122,7 @@ export default function QuestionsPage() {
       <div className="flex h-screen flex-col items-center justify-center bg-green-50">
         <div className="relative flex h-24 w-24 items-center justify-center">
           <div className="absolute h-full w-full animate-pulse rounded-full bg-green-100" />
-          <span className="relative text-5xl">🌿</span>
+          <span className="relative text-5xl" aria-hidden="true">🌿</span>
         </div>
         <p className="mt-6 text-lg font-medium text-green-800">
           Sending your answers...
@@ -149,7 +149,14 @@ export default function QuestionsPage() {
       <div className="mb-2 text-sm text-gray-500">
         Question {currentQ + 1} of {questions.length}
       </div>
-      <div className="mb-8 flex gap-1">
+      <div
+        className="mb-8 flex gap-1"
+        role="progressbar"
+        aria-valuenow={currentQ + 1}
+        aria-valuemin={1}
+        aria-valuemax={questions.length}
+        aria-label={`Question ${currentQ + 1} of ${questions.length}`}
+      >
         {questions.map((_, i) => (
           <div
             key={i}
@@ -207,6 +214,7 @@ export default function QuestionsPage() {
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               placeholder="Type your answer..."
+              aria-label="Your answer"
               className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-base focus:border-green-500 focus:outline-none"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && textInput.trim()) {
@@ -229,7 +237,7 @@ export default function QuestionsPage() {
         {/* Skip */}
         <button
           onClick={skipQuestion}
-          className="mt-2 w-full py-2 text-center text-xs text-gray-400 underline"
+          className="mt-2 w-full py-2 text-center text-xs text-gray-600 underline"
         >
           Skip this question
         </button>

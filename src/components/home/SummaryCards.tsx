@@ -35,7 +35,7 @@ export default function SummaryCards() {
       label: "Alerts",
       value: alerts,
       icon: AlertTriangle,
-      color: alerts > 0 ? "text-red-600" : "text-gray-400",
+      color: alerts > 0 ? "text-red-500" : "text-gray-400",
       bg: alerts > 0 ? "bg-red-50" : "bg-gray-50",
     },
     {
@@ -48,7 +48,7 @@ export default function SummaryCards() {
   ];
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+    <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar" role="region" aria-label="Farm summary">
       {cards.map((card, i) => {
         const Icon = card.icon;
         return (
@@ -59,11 +59,11 @@ export default function SummaryCards() {
             transition={{ delay: i * 0.05, duration: 0.3 }}
             className={`flex min-w-[80px] flex-1 flex-col items-center rounded-xl ${card.bg} px-3 py-2.5`}
           >
-            <Icon size={18} className={card.color} strokeWidth={2} />
+            <Icon size={18} className={card.color} strokeWidth={2} aria-hidden="true" />
             <span className={`mt-1 text-lg font-bold ${card.color}`}>
               {card.value}
             </span>
-            <span className="text-[10px] font-medium text-gray-500">
+            <span className="text-[10px] font-medium text-gray-600">
               {card.label}
             </span>
           </motion.div>

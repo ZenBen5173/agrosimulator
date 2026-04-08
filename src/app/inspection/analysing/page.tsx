@@ -84,31 +84,31 @@ export default function AnalysingPage() {
       <div className="flex flex-col items-center gap-6">
         <div className="relative flex h-24 w-24 items-center justify-center">
           <div className="absolute h-full w-full animate-pulse rounded-full bg-green-100" />
-          <span className="relative text-5xl">🌿</span>
+          <span className="relative text-5xl" aria-hidden="true">🌿</span>
         </div>
 
         {error ? (
-          <>
+          <div role="alert">
             <p className="text-center text-red-600">{error}</p>
             <button
               onClick={() => {
                 setError(null);
                 window.location.reload();
               }}
-              className="rounded-xl bg-green-600 px-6 py-3 text-white"
+              className="mt-6 rounded-xl bg-green-600 px-6 py-3 text-white"
             >
               Try again
             </button>
-          </>
+          </div>
         ) : (
-          <>
+          <div role="status" aria-live="polite">
             <p className="text-lg font-medium text-green-800">
               Analysing your crop photos...
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="mt-2 text-sm text-gray-500">
               This usually takes 5&ndash;10 seconds
             </p>
-          </>
+          </div>
         )}
       </div>
     </div>

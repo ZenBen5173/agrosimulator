@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-const FarmDrawMap = dynamic(() => import("@/components/FarmDrawMap"), {
+const FarmSetup = dynamic(() => import("@/components/FarmSetup"), {
   ssr: false,
   loading: () => (
     <div className="flex h-screen w-screen items-center justify-center bg-green-50">
@@ -12,5 +12,5 @@ const FarmDrawMap = dynamic(() => import("@/components/FarmDrawMap"), {
 });
 
 export default function MapPage() {
-  return <FarmDrawMap />;
+  return <FarmSetup />;
 }

@@ -60,6 +60,19 @@ export default function PlotBottomSheet({
 }: PlotBottomSheetProps) {
   const router = useRouter();
   const [harvesting, setHarvesting] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  // Focus trap: focus first focusable element when sheet opens, close on Escape
+  useEffect(() => {
+    if (!plot) return;
+    const sheet = sheetRef.current;
+    if (sheet) {
+      const focusable = sheet.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      focusable?.focus();
+    }
+  }, [plot]);
 
   // Close on escape
   useEffect(() => {
@@ -70,6 +83,38 @@ export default function PlotBottomSheet({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [plot, onClose]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Trap focus within the dialog
+      if (e.key === "Tab") {
+        const sheet = sheetRef.current;
+        if (!sheet) return;
+        const focusableElements = sheet.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusableElements.length === 0) return;
+        const first = focusableElements[0];
+        const last = focusableElements[focusableElements.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    },
+    [onClose]
+  );
 
   // Touch dismiss
   const startYRef = useRef(0);
@@ -133,12 +178,16 @@ export default function PlotBottomSheet({
 
           {/* Sheet */}
           <motion.div
+            ref={sheetRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="plot-sheet-title"
+            onKeyDown={handleKeyDown}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="fixed right-0 bottom-0 left-0 z-50 rounded-t-3xl bg-white/95 backdrop-blur-xl px-5 pt-3 pb-6 shadow-[0_-8px_40px_rgba(0,0,0,0.12)]"
-            style={{ paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}
+            className="fixed right-0 bottom-0 left-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white pt-3 px-5 pb-20 shadow-[0_-8px_40px_rgba(0,0,0,0.15)]"
             onTouchStart={onTouchStart}
             onTouchEnd={onTouchEnd}
           >
@@ -162,7 +211,7 @@ export default function PlotBottomSheet({
               </div>
 
               <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 id="plot-sheet-title" className="text-lg font-bold text-gray-900">
                   {plot.label} — {plot.crop_name}
                 </h2>
                 <div className="mt-1 flex flex-wrap gap-1.5">
@@ -186,19 +235,22 @@ export default function PlotBottomSheet({
 
               <button
                 onClick={onClose}
+                aria-label="Close plot details"
                 className="rounded-full bg-gray-100 p-2 text-gray-500 hover:bg-gray-200 transition-colors"
               >
-                <X size={16} />
+                <X size={16} aria-hidden="true" />
               </button>
             </div>
 
             {/* Warning alert */}
             {warningReason && plot.warning_level !== "none" && (
               <div
+                role="alert"
                 className={`mb-4 flex items-start gap-2.5 rounded-xl border p-3 ${warningColor}`}
               >
                 <AlertTriangle
                   size={16}
+                  aria-hidden="true"
                   className={
                     plot.warning_level === "red"
                       ? "text-red-600 mt-0.5"
@@ -250,25 +302,37 @@ export default function PlotBottomSheet({
                 }}
                 className="flex flex-col items-center gap-1 rounded-xl bg-green-50 p-2.5 transition-colors hover:bg-green-100 active:scale-95"
               >
-                <Search size={18} className="text-green-600" />
+                <Search size={18} aria-hidden="true" className="text-green-600" />
                 <span className="text-[10px] font-medium text-green-700">
                   Inspect
                 </span>
               </button>
-              <button className="flex flex-col items-center gap-1 rounded-xl bg-blue-50 p-2.5 transition-colors hover:bg-blue-100 active:scale-95">
-                <Droplets size={18} className="text-blue-600" />
+              <button
+                disabled
+                aria-disabled="true"
+                className="flex flex-col items-center gap-1 rounded-xl bg-blue-50 p-2.5 transition-colors hover:bg-blue-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Droplets size={18} aria-hidden="true" className="text-blue-600" />
                 <span className="text-[10px] font-medium text-blue-700">
                   Water
                 </span>
               </button>
-              <button className="flex flex-col items-center gap-1 rounded-xl bg-lime-50 p-2.5 transition-colors hover:bg-lime-100 active:scale-95">
-                <Sprout size={18} className="text-lime-600" />
+              <button
+                disabled
+                aria-disabled="true"
+                className="flex flex-col items-center gap-1 rounded-xl bg-lime-50 p-2.5 transition-colors hover:bg-lime-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Sprout size={18} aria-hidden="true" className="text-lime-600" />
                 <span className="text-[10px] font-medium text-lime-700">
                   Fertilize
                 </span>
               </button>
-              <button className="flex flex-col items-center gap-1 rounded-xl bg-gray-50 p-2.5 transition-colors hover:bg-gray-100 active:scale-95">
-                <Clock size={18} className="text-gray-600" />
+              <button
+                disabled
+                aria-disabled="true"
+                className="flex flex-col items-center gap-1 rounded-xl bg-gray-50 p-2.5 transition-colors hover:bg-gray-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Clock size={18} aria-hidden="true" className="text-gray-600" />
                 <span className="text-[10px] font-medium text-gray-700">
                   History
                 </span>
@@ -290,7 +354,7 @@ export default function PlotBottomSheet({
                     : "bg-orange-500"
                 }`}
               >
-                <Search size={16} className="inline mr-1.5 -mt-0.5" />
+                <Search size={16} aria-hidden="true" className="inline mr-1.5 -mt-0.5" />
                 Start Inspection
               </motion.button>
             )}
@@ -311,7 +375,7 @@ export default function PlotBottomSheet({
                 disabled={harvesting}
                 className="mb-3 w-full rounded-xl bg-amber-500 py-3.5 text-center text-sm font-semibold text-white shadow-sm disabled:opacity-50"
               >
-                <Scissors size={16} className="inline mr-1.5 -mt-0.5" />
+                <Scissors size={16} aria-hidden="true" className="inline mr-1.5 -mt-0.5" />
                 {harvesting ? "Harvesting..." : "Mark as Harvested"}
               </motion.button>
             )}
@@ -326,7 +390,7 @@ export default function PlotBottomSheet({
                 }}
                 className="mb-3 w-full rounded-xl bg-green-600 py-3.5 text-center text-sm font-semibold text-white shadow-lg"
               >
-                <Sprout size={16} className="inline mr-1.5 -mt-0.5" />
+                <Sprout size={16} aria-hidden="true" className="inline mr-1.5 -mt-0.5" />
                 Plan next crop
               </motion.button>
             )}

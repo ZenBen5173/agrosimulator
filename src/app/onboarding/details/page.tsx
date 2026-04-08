@@ -122,7 +122,7 @@ function DetailsForm() {
       .update({ farmer_confirmed_at: new Date().toISOString() })
       .eq("farm_id", farmId);
 
-    router.push(`/onboarding/layout?farm_id=${farmId}`);
+    router.push(`/onboarding/confirm?farm_id=${farmId}`);
   }
 
   if (loading) {
@@ -173,11 +173,12 @@ function DetailsForm() {
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-lg font-bold text-gray-900">Your Soil Type</h2>
             {soilEdited ? (
-              <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+              <span aria-live="polite" className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
                 Edited by you
               </span>
             ) : (
               <span
+                aria-live="polite"
                 className={`rounded-full px-3 py-1 text-xs font-medium ${confidenceColor}`}
               >
                 AI Suggestion — {confidence}
@@ -199,6 +200,7 @@ function DetailsForm() {
 
           <select
             value={soil}
+            aria-label="Soil type"
             onChange={(e) => {
               setSoil(e.target.value);
               if (e.target.value !== suggestion.suggested_soil) {
@@ -237,6 +239,7 @@ function DetailsForm() {
 
           <select
             value={water}
+            aria-label="Water source"
             onChange={(e) => setWater(e.target.value)}
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base"
           >
@@ -274,7 +277,7 @@ function DetailsForm() {
         <button
           onClick={handleConfirm}
           disabled={saving}
-          className="mx-auto block w-full max-w-md rounded-xl bg-green-600 py-4 text-lg font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-green-400"
+          className="mx-auto block w-full max-w-md rounded-xl bg-green-600 py-4 text-lg font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-green-500"
         >
           {saving
             ? "Saving..."
@@ -289,11 +292,15 @@ function DetailsForm() {
           onClick={() => setShowSoilGuide(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Soil identification guide"
             className="w-full max-w-md rounded-t-2xl bg-white px-4 pb-6 pt-4"
             style={{
               paddingBottom: "calc(24px + env(safe-area-inset-bottom))",
             }}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { if (e.key === "Escape") setShowSoilGuide(false); }}
           >
             <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-gray-300" />
             <h2 className="mb-4 text-lg font-bold text-gray-900">

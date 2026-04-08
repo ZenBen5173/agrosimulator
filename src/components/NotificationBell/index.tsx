@@ -25,9 +25,12 @@ export default function NotificationBell() {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications, none unread"}
+        aria-haspopup="true"
+        aria-expanded={open}
         className="relative rounded-full bg-white/80 p-2 shadow backdrop-blur-sm"
       >
-        <Bell size={18} className="text-gray-700" />
+        <Bell size={18} className="text-gray-700" aria-hidden="true" />
         {unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -47,7 +50,9 @@ export default function NotificationBell() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl bg-white shadow-xl border border-gray-100 overflow-hidden"
+              role="menu"
+              aria-label="Notifications"
+              className="fixed right-4 top-14 z-50 w-72 rounded-2xl bg-white shadow-xl border border-gray-100 overflow-hidden"
             >
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <h3 className="text-sm font-bold text-gray-800">
@@ -75,6 +80,7 @@ export default function NotificationBell() {
                   notifications.slice(0, 10).map((n) => (
                     <button
                       key={n.id}
+                      role="menuitem"
                       onClick={() => {
                         markNotificationRead(n.id);
                       }}

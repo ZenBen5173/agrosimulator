@@ -28,6 +28,13 @@ body {
   display: none !important;
 }
 
+/* New farm setup map — hide native toolbar, we use custom UI */
+#farm-setup-map .leaflet-draw-toolbar,
+#farm-setup-map .leaflet-draw-actions,
+#farm-setup-map .leaflet-draw-tooltip {
+  display: none !important;
+}
+
 /* On redraw page: hide toolbar (we auto-start) but keep tooltip visible */
 #redraw-map .leaflet-draw-toolbar,
 #redraw-map .leaflet-draw-actions {
@@ -92,5 +99,18 @@ body {
   .animate-message-in,
   .typing-dot {
     animation: none !important;
+  }
+}
+
+/* Accessibility: visible focus ring */
+:focus-visible {
+  outline: 2px solid #16a34a;
+  outline-offset: 2px;
+}
+
+/* Accessibility: forced-colors / high-contrast mode */
+@media (forced-colors: active) {
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: ButtonText;
   }
 }

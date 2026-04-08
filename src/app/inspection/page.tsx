@@ -81,7 +81,7 @@ function InspectionBriefing() {
         <div className="flex flex-col items-center gap-4">
           <div className="relative flex h-20 w-20 items-center justify-center">
             <div className="absolute h-full w-full animate-pulse rounded-full bg-green-100" />
-            <span className="relative text-4xl">🔍</span>
+            <span className="relative text-4xl" aria-hidden="true">🔍</span>
           </div>
           <p className="text-green-700">Preparing inspection...</p>
         </div>
@@ -98,6 +98,7 @@ function InspectionBriefing() {
         <button
           onClick={() => router.back()}
           className="mb-4 text-sm text-gray-500"
+          aria-label="Go back"
         >
           ← Back
         </button>
@@ -110,9 +111,9 @@ function InspectionBriefing() {
       {/* Warning reason */}
       {plot.warning_reason &&
         plot.warning_level !== "none" && (
-          <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 p-4">
+          <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 p-4" role="alert">
             <p className="text-sm font-medium text-orange-800">
-              ⚠ AI flagged this plot because:
+              <span aria-hidden="true">⚠ </span>AI flagged this plot because:
             </p>
             <p className="mt-1 text-sm text-orange-700">
               {plot.warning_reason}
@@ -125,7 +126,7 @@ function InspectionBriefing() {
         <h2 className="mb-3 text-sm font-bold text-gray-800">
           What to look for
         </h2>
-        <div className="space-y-2">
+        <ul className="space-y-2">
           {(tips.length > 0
             ? tips
             : [
@@ -134,15 +135,15 @@ function InspectionBriefing() {
                 "Compare affected plants with nearby healthy ones",
               ]
           ).map((tip, i) => (
-            <div
+            <li
               key={i}
               className="flex items-start gap-3 rounded-lg bg-white p-3 shadow-sm"
             >
-              <span className="mt-0.5 text-green-500">●</span>
+              <span className="mt-0.5 text-green-500" aria-hidden="true">●</span>
               <span className="text-sm text-gray-700">{tip}</span>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
 
       {/* Photo guide */}
@@ -152,7 +153,7 @@ function InspectionBriefing() {
         </h2>
         <div className="space-y-3">
           <div className="flex items-center gap-3 rounded-xl bg-white p-4 shadow-sm">
-            <span className="text-2xl">📸</span>
+            <span className="text-2xl" aria-hidden="true">📸</span>
             <div>
               <p className="text-sm font-medium text-gray-800">Full plant</p>
               <p className="text-xs text-gray-500">
@@ -161,7 +162,7 @@ function InspectionBriefing() {
             </div>
           </div>
           <div className="flex items-center gap-3 rounded-xl bg-white p-4 shadow-sm">
-            <span className="text-2xl">🔍</span>
+            <span className="text-2xl" aria-hidden="true">🔍</span>
             <div>
               <p className="text-sm font-medium text-gray-800">Close-up</p>
               <p className="text-xs text-gray-500">
@@ -170,7 +171,7 @@ function InspectionBriefing() {
             </div>
           </div>
           <div className="flex items-center gap-3 rounded-xl bg-white p-4 shadow-sm">
-            <span className="text-2xl">🌿</span>
+            <span className="text-2xl" aria-hidden="true">🌿</span>
             <div>
               <p className="text-sm font-medium text-gray-800">
                 Healthy comparison

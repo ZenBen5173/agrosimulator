@@ -201,7 +201,7 @@ export default function ReferralPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col items-center text-center">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
-          <span className="text-3xl">&#x1F468;&#x200D;&#x1F33E;</span>
+          <span className="text-3xl" aria-hidden="true">&#x1F468;&#x200D;&#x1F33E;</span>
         </div>
         <h1 className="text-xl font-bold text-gray-900">
           {saving
@@ -305,7 +305,7 @@ export default function ReferralPage() {
             onClick={copyCaseSummary}
             className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
           >
-            {copied ? "Copied!" : "Copy Summary"}
+            <span aria-live="polite">{copied ? "Copied!" : "Copy Summary"}</span>
           </button>
         </div>
         <div className="rounded-xl bg-gray-50 p-4">
@@ -354,7 +354,7 @@ export default function ReferralPage() {
               key={i}
               className="flex items-center gap-2 text-sm text-gray-600"
             >
-              <span className="text-green-500">&#x2713;</span>
+              <span className="text-green-500" aria-hidden="true">&#x2713;</span>
               {item}
             </div>
           ))}
@@ -378,6 +378,7 @@ export default function ReferralPage() {
           href={whatsappUrl}
           target="_blank"
           rel="noopener noreferrer"
+          aria-label="Send via WhatsApp"
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-green-600 py-4 text-center text-base font-semibold text-white shadow-lg"
         >
           Send via WhatsApp &rarr;
@@ -386,6 +387,7 @@ export default function ReferralPage() {
         {/* Email CTA */}
         <a
           href={emailUrl}
+          aria-label="Send via Email"
           className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-blue-500 py-3.5 text-center text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
         >
           Send via Email (agriculture@mardi.gov.my)

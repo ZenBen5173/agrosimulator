@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Activity } from "lucide-react";
+import { Activity, ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useFarmStore } from "@/stores/farmStore";
 import ActivityCard from "@/components/activity/ActivityCard";
@@ -24,6 +25,7 @@ type FilterKey = (typeof FILTERS)[number]["key"];
 const PAGE_LIMIT = 20;
 
 export default function ActivityPage() {
+  const router = useRouter();
   const { farm, setFarm } = useFarmStore();
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,7 +116,14 @@ export default function ActivityPage() {
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       {/* ── header ── */}
-      <div className="flex h-14 shrink-0 items-center border-b border-gray-100 bg-white px-4">
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-2">
+        <button
+          onClick={() => router.back()}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"
+          aria-label="Go back"
+        >
+          <ChevronLeft size={22} aria-hidden="true" />
+        </button>
         <h1 className="text-lg font-bold text-gray-900">Activity</h1>
       </div>
 
@@ -125,6 +134,7 @@ export default function ActivityPage() {
             <button
               key={f.key}
               onClick={() => handleFilterChange(f.key)}
+              aria-current={activeFilter === f.key ? "page" : undefined}
               className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
                 activeFilter === f.key
                   ? "bg-green-600 text-white shadow-sm"
@@ -141,11 +151,12 @@ export default function ActivityPage() {
       <div className="flex-1 overflow-y-auto px-4 pt-3 pb-4">
         {/* loading skeleton */}
         {loading && (
-          <div className="space-y-3">
+          <div className="space-y-3" aria-busy="true" aria-label="Loading activity items">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
                 className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white p-3"
+                aria-hidden="true"
               >
                 <div className="h-10 w-10 animate-pulse rounded-full bg-gray-200" />
                 <div className="flex-1 space-y-2">
@@ -161,7 +172,7 @@ export default function ActivityPage() {
         {/* empty state */}
         {!loading && items.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 pt-20 text-center">
-            <Activity size={48} className="text-gray-300" />
+            <Activity size={48} className="text-gray-300" aria-hidden="true" />
             <p className="text-lg font-semibold text-gray-500">
               No activity yet
             </p>

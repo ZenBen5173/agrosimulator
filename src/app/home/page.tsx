@@ -123,6 +123,10 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [extraPolygons, setExtraPolygons] = useState<GeoJSON.Polygon[]>([]);
+  const [zoneOverlays, setZoneOverlays] = useState<
+    { label: string; crop: string; colour: string; polygon: GeoJSON.Polygon; warningLevel?: string }[]
+  >([]);
 
   useEffect(() => {
     async function load() {
@@ -159,8 +163,8 @@ export default function HomePage() {
 
         store.setFarm(farmRow);
 
-        // Fetch plots and market prices in parallel
-        const [plotsRes, pricesApiRes] = await Promise.all([
+        // Fetch plots, market prices, extra parcels, and zone polygons in parallel
+        const [plotsRes, pricesApiRes, parcelsRes, zonesRes] = await Promise.all([
           supabase
             .from("plots")
             .select(
@@ -170,10 +174,43 @@ export default function HomePage() {
           fetch("/api/market-prices").then((r) =>
             r.ok ? r.json() : { prices: [] }
           ),
+          supabase
+            .from("farm_features")
+            .select("geometry_geojson")
+            .eq("farm_id", farmRow.id)
+            .eq("feature_type", "parcel"),
+          supabase
+            .from("farm_zones")
+            .select("zone_label, suggested_crop, crop_override, colour_hex, geometry_geojson")
+            .eq("farm_id", farmRow.id)
+            .order("zone_label"),
         ]);
 
         const plotRows: PlotData[] = plotsRes.data || [];
         store.setPlots(plotRows);
+
+        // Extract extra parcel polygons for the map
+        const parcelRows = parcelsRes.data || [];
+        const polys = parcelRows
+          .map((r: { geometry_geojson: unknown }) => r.geometry_geojson as GeoJSON.Polygon)
+          .filter((g): g is GeoJSON.Polygon => !!g && typeof g === "object");
+        setExtraPolygons(polys);
+
+        // Build zone overlays (merge warning_level from plots)
+        const zoneRows = zonesRes.data || [];
+        const zOverlays = zoneRows
+          .filter((z: { geometry_geojson: unknown }) => z.geometry_geojson)
+          .map((z: { zone_label: string; suggested_crop: string; crop_override: string | null; colour_hex: string; geometry_geojson: unknown }) => {
+            const matchingPlot = plotRows.find((p) => p.label === z.zone_label);
+            return {
+              label: z.zone_label,
+              crop: z.crop_override || z.suggested_crop,
+              colour: z.colour_hex,
+              polygon: z.geometry_geojson as GeoJSON.Polygon,
+              warningLevel: matchingPlot?.warning_level,
+            };
+          });
+        setZoneOverlays(zOverlays);
 
         const prices: MarketPrice[] = pricesApiRes.prices || [];
         store.setMarketPrices(prices);
@@ -500,10 +537,10 @@ export default function HomePage() {
 
   function trendIcon(trend: string) {
     if (trend === "up")
-      return <TrendingUp size={14} className="text-green-600" />;
+      return <TrendingUp size={14} className="text-green-600" aria-hidden="true" />;
     if (trend === "down")
-      return <TrendingDown size={14} className="text-red-500" />;
-    return <Minus size={14} className="text-gray-400" />;
+      return <TrendingDown size={14} className="text-red-500" aria-hidden="true" />;
+    return <Minus size={14} className="text-gray-400" aria-hidden="true" />;
   }
 
   function getDayName(dateStr: string) {
@@ -518,6 +555,8 @@ export default function HomePage() {
         {farm.bounding_box ? (
           <FarmMapView
             polygonGeoJson={farm.polygon_geojson ?? undefined}
+            extraPolygons={extraPolygons.length > 0 ? extraPolygons : undefined}
+            zones={zoneOverlays.length > 0 ? zoneOverlays : undefined}
             boundingBox={farm.bounding_box}
             plots={plots.map((p) => ({
               label: p.label,
@@ -556,7 +595,8 @@ export default function HomePage() {
         {/* Bottom-right: Redraw boundary button */}
         <button
           onClick={() => router.push("/farm/redraw")}
-          className="absolute bottom-8 right-4 z-[1000] rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-gray-600 shadow backdrop-blur-sm transition-colors hover:bg-white"
+          aria-label="Edit farm boundary"
+          className="absolute bottom-8 right-4 z-[1000] rounded-full bg-white/80 px-4 py-2.5 text-sm font-medium text-gray-600 shadow backdrop-blur-sm transition-colors hover:bg-white"
         >
           ✏️ Edit boundary
         </button>
@@ -565,7 +605,7 @@ export default function HomePage() {
       {/* Scrollable content */}
       <div className="-mt-5 relative z-10 rounded-t-3xl bg-gray-50 px-4 pt-5 pb-4">
         {/* Summary Cards */}
-        <div className="mb-4">
+        <div className="mb-5">
           <SummaryCards />
         </div>
 
@@ -573,60 +613,63 @@ export default function HomePage() {
         <PlotCardRow />
 
         {/* Quick Actions */}
-        <div className="mb-4 flex gap-2">
+        <div className="mb-5 flex gap-2">
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={handleScanCrop}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-sm"
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-sm"
           >
-            <Search size={16} />
+            <Search size={16} aria-hidden="true" />
             Scan crop
           </motion.button>
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={() => router.push("/activity")}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm border border-gray-200"
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm border border-gray-200"
           >
-            <Clock size={16} />
+            <Clock size={16} aria-hidden="true" />
             Farm history
           </motion.button>
         </div>
 
         {/* Today's Tasks */}
-        <Card variant="default" className="mb-4 p-4">
+        <Card variant="default" className="mb-5 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-gray-800">
+            <h3 className="text-base font-bold text-gray-800">
               Today&apos;s Tasks
             </h3>
             <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
               {tasks.length}
             </span>
           </div>
-          <div className="space-y-2">
+          <ul className="space-y-2" role="list">
             {tasks.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
+              <li className="rounded-xl border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
                 All caught up! No tasks for today. ✨
-              </div>
+              </li>
             ) : (
               tasks.slice(0, 5).map((task) => {
                 const emoji = TASK_TYPE_ICON[task.task_type] || "📋";
                 const pStyle =
                   PRIORITY_STYLE[task.priority] || PRIORITY_STYLE.normal;
                 return (
+                  <li key={task.id}>
                   <motion.div
-                    key={task.id}
                     initial={{ opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
                     className="flex items-start gap-3 rounded-xl bg-gray-50 px-3 py-2.5"
                   >
                     <button
                       onClick={() => handleCompleteTask(task.id)}
-                      className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 border-gray-300 transition-all hover:border-green-500 hover:bg-green-50 active:scale-90"
+                      role="checkbox"
+                      aria-checked="false"
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border-2 border-gray-300 transition-all hover:border-green-500 hover:bg-green-50 active:scale-90"
                       aria-label={`Complete: ${task.title}`}
                     >
                       <CheckCircle2
-                        size={10}
+                        size={14}
                         className="text-transparent"
+                        aria-hidden="true"
                       />
                     </button>
                     <div className="min-w-0 flex-1">
@@ -641,27 +684,28 @@ export default function HomePage() {
                       </p>
                       <div className="mt-1 flex items-center gap-2">
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${pStyle.bg} ${pStyle.text}`}
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${pStyle.bg} ${pStyle.text}`}
                         >
                           {pStyle.label}
                         </span>
                         {task.plot_label && (
-                          <span className="text-[10px] text-gray-400">
+                          <span className="text-[11px] text-gray-600">
                             Plot {task.plot_label}
                           </span>
                         )}
                       </div>
                     </div>
                   </motion.div>
+                  </li>
                 );
               })
             )}
-          </div>
+          </ul>
         </Card>
 
         {/* 5-Day Forecast */}
-        <Card variant="default" className="mb-4 p-4">
-          <h3 className="mb-3 text-sm font-bold text-gray-800">
+        <Card variant="default" className="mb-5 p-4">
+          <h3 className="mb-3 text-base font-bold text-gray-800">
             5-Day Forecast
           </h3>
           <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
@@ -676,11 +720,11 @@ export default function HomePage() {
                 <span className="my-1 text-lg">
                   {FORECAST_EMOJI[day.condition] || "☀️"}
                 </span>
-                <span className="text-[11px] font-semibold text-gray-700">
+                <span className="text-xs font-semibold text-gray-700">
                   {day.temp_min}–{day.temp_max}°
                 </span>
                 {day.rain_chance > 0 && (
-                  <span className="text-[9px] text-blue-500 font-medium">
+                  <span className="text-[11px] text-blue-500 font-medium">
                     💧{day.rain_chance}%
                   </span>
                 )}
@@ -691,8 +735,8 @@ export default function HomePage() {
 
         {/* Market Prices */}
         {crops.length > 0 && (
-          <Card variant="default" className="mb-4 p-4">
-            <h3 className="mb-3 text-sm font-bold text-gray-800">
+          <Card variant="default" className="mb-5 p-4">
+            <h3 className="mb-3 text-base font-bold text-gray-800">
               Market Prices
             </h3>
             <div className="space-y-1.5">
@@ -729,8 +773,8 @@ export default function HomePage() {
 
         {/* Supplies */}
         {supplies.length > 0 && (
-          <Card variant="default" className="mb-4 p-4">
-            <h3 className="mb-3 text-sm font-bold text-gray-800">
+          <Card variant="default" className="mb-5 p-4">
+            <h3 className="mb-3 text-base font-bold text-gray-800">
               Fertilizers &amp; Pesticides
             </h3>
             <div className="space-y-1.5">

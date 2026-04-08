@@ -41,21 +41,27 @@ export default function FarmSwitcher() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Switch farm, currently ${farm?.name || "Unnamed Farm"}`}
         className="flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-gray-600 shadow backdrop-blur-sm transition-colors hover:bg-white"
       >
         Switch farm
         <ChevronDown
           size={12}
           className={`transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden="true"
         />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-48 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden">
+        <div className="absolute right-0 top-full mt-1 w-48 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden" role="listbox">
           {farms.map((f) => (
             <button
               key={f.id}
               onClick={() => handleSwitch(f.id)}
+              role="option"
+              aria-selected={f.id === farm?.id}
               className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-gray-50 ${
                 f.id === farm?.id
                   ? "bg-green-50 font-semibold text-green-700"
@@ -68,7 +74,7 @@ export default function FarmSwitcher() {
                 }`}
               />
               <span className="truncate">{f.name || "Unnamed Farm"}</span>
-              <span className="ml-auto flex-shrink-0 text-[10px] text-gray-400">
+              <span className="ml-auto flex-shrink-0 text-[10px] text-gray-600">
                 {f.area_acres}ac
               </span>
             </button>

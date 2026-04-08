@@ -293,7 +293,10 @@ export default function ProfilePage() {
 
           <div className="relative flex flex-col items-center pt-6">
             {/* Avatar */}
-            <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-green-100 text-2xl font-bold text-green-700 shadow-md">
+            <div
+              className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-green-100 text-2xl font-bold text-green-700 shadow-md"
+              aria-label={`Profile avatar for ${profile?.full_name || "user"}`}
+            >
               {getInitials(profile?.full_name ?? null)}
             </div>
 
@@ -352,19 +355,19 @@ export default function ProfilePage() {
                 <div className="mt-2 space-y-1.5">
                   {email && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <Mail size={14} className="text-gray-400" />
+                      <Mail size={14} className="text-gray-400" aria-hidden="true" />
                       {email}
                     </div>
                   )}
                   {profile?.phone && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <Phone size={14} className="text-gray-400" />
+                      <Phone size={14} className="text-gray-400" aria-hidden="true" />
                       {profile.phone}
                     </div>
                   )}
                   {(profile?.district || profile?.state) && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <MapPin size={14} className="text-gray-400" />
+                      <MapPin size={14} className="text-gray-400" aria-hidden="true" />
                       {[profile.district, profile.state]
                         .filter(Boolean)
                         .join(", ")}
@@ -376,7 +379,7 @@ export default function ProfilePage() {
                   onClick={startEditing}
                   className="mt-4 flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
                 >
-                  <Pencil size={14} />
+                  <Pencil size={14} aria-hidden="true" />
                   Edit Profile
                 </button>
               </>
@@ -389,29 +392,29 @@ export default function ProfilePage() {
           <Card variant="elevated" className="p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-50">
-                <Sprout size={16} className="text-green-600" />
+                <Sprout size={16} className="text-green-600" aria-hidden="true" />
               </div>
               <h3 className="font-semibold text-gray-900">Farm Info</h3>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <InfoRow
-                icon={<Sprout size={14} className="text-gray-400" />}
+                icon={<Sprout size={14} className="text-gray-400" aria-hidden="true" />}
                 label="Farm Name"
                 value={farm.name || "—"}
               />
               <InfoRow
-                icon={<Ruler size={14} className="text-gray-400" />}
+                icon={<Ruler size={14} className="text-gray-400" aria-hidden="true" />}
                 label="Area"
                 value={farm.area_acres ? `${farm.area_acres.toFixed(1)} acres` : "—"}
               />
               <InfoRow
-                icon={<Layers size={14} className="text-gray-400" />}
+                icon={<Layers size={14} className="text-gray-400" aria-hidden="true" />}
                 label="Soil Type"
                 value={farm.soil_type ? formatLabel(farm.soil_type) : "—"}
               />
               <InfoRow
-                icon={<Droplets size={14} className="text-gray-400" />}
+                icon={<Droplets size={14} className="text-gray-400" aria-hidden="true" />}
                 label="Water Source"
                 value={farm.water_source ? formatLabel(farm.water_source) : "—"}
               />
@@ -423,7 +426,7 @@ export default function ProfilePage() {
         <Card variant="elevated" className="p-5">
           <div className="mb-3 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50">
-              <Bell size={16} className="text-amber-600" />
+              <Bell size={16} className="text-amber-600" aria-hidden="true" />
             </div>
             <h3 className="font-semibold text-gray-900">Notifications</h3>
           </div>
@@ -492,9 +495,12 @@ export default function ProfilePage() {
                           }
                         }}
                         className="peer sr-only"
+                        role="switch"
+                        aria-checked={!!pushSub}
+                        aria-label="Push Notifications"
                       />
-                      <div className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-500" />
-                      <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+                      <div className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-500" aria-hidden="true" />
+                      <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" aria-hidden="true" />
                     </div>
                   </label>
                 )}
@@ -507,7 +513,7 @@ export default function ProfilePage() {
         <Card variant="elevated" className="p-5">
           <div className="mb-3 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50">
-              <FileText size={16} className="text-orange-600" />
+              <FileText size={16} className="text-orange-600" aria-hidden="true" />
             </div>
             <h3 className="font-semibold text-gray-900">My Referrals</h3>
           </div>
@@ -562,6 +568,7 @@ export default function ProfilePage() {
                     onClick={() =>
                       setExpandedReferral(isExpanded ? null : ref.id)
                     }
+                    aria-expanded={isExpanded}
                     className="w-full rounded-xl border border-gray-100 bg-gray-50 p-3 text-left transition hover:bg-gray-100"
                   >
                     <div className="flex items-center justify-between">
@@ -642,7 +649,7 @@ export default function ProfilePage() {
               className="flex w-full items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 text-left text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50">
-                <Download size={16} className="text-blue-600" />
+                <Download size={16} className="text-blue-600" aria-hidden="true" />
               </div>
               <div className="flex-1">
                 <div>{exporting ? "Generating Report..." : "Export Farm Report"}</div>
@@ -657,7 +664,7 @@ export default function ProfilePage() {
               className="flex w-full items-center gap-3 rounded-xl border border-red-100 px-4 py-3 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50">
-                <LogOut size={16} className="text-red-500" />
+                <LogOut size={16} className="text-red-500" aria-hidden="true" />
               </div>
               <div className="flex-1">
                 <div>Sign Out</div>
@@ -718,9 +725,12 @@ function ToggleRow({
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
           className="peer sr-only"
+          role="switch"
+          aria-checked={checked}
+          aria-label={label}
         />
-        <div className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-500" />
-        <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+        <div className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-500" aria-hidden="true" />
+        <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" aria-hidden="true" />
       </div>
     </label>
   );

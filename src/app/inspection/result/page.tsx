@@ -28,9 +28,10 @@ function ExpandableSection({
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between p-4 text-left"
+        aria-expanded={open}
       >
         <span className="text-sm font-medium text-gray-800">{title}</span>
-        <span className="text-gray-400">{open ? "▲" : "▼"}</span>
+        <span className="text-gray-400" aria-hidden="true">{open ? "▲" : "▼"}</span>
       </button>
       {open && <div className="border-t px-4 pb-4 pt-3">{children}</div>}
     </div>
@@ -76,7 +77,7 @@ export default function ResultPage() {
         {/* Header */}
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-            <span className="text-3xl">🌿</span>
+            <span className="text-3xl" aria-hidden="true">🌿</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">
             {result.diagnosis}
@@ -93,6 +94,7 @@ export default function ResultPage() {
           </span>
           {result.severity && (
             <span
+              role="alert"
               className={`mt-2 rounded-full px-3 py-1 text-xs font-medium ${
                 result.severity === "severe"
                   ? "bg-red-100 text-red-700"
@@ -133,6 +135,9 @@ export default function ResultPage() {
                     key={i}
                     onClick={() => toggleStep(i)}
                     className="flex w-full items-start gap-3 text-left"
+                    role="checkbox"
+                    aria-checked={completedSteps.has(i)}
+                    aria-label={`Step ${i + 1}: ${step}`}
                   >
                     <span
                       className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 text-xs ${
@@ -140,6 +145,7 @@ export default function ResultPage() {
                           ? "border-green-500 bg-green-500 text-white"
                           : "border-gray-300"
                       }`}
+                      aria-hidden="true"
                     >
                       {completedSteps.has(i) ? "✓" : i + 1}
                     </span>
@@ -166,7 +172,7 @@ export default function ResultPage() {
                     key={i}
                     className="flex items-start gap-2 text-sm text-gray-600"
                   >
-                    <span className="mt-0.5 text-amber-500">●</span>
+                    <span className="mt-0.5 text-amber-500" aria-hidden="true">●</span>
                     {sign}
                   </li>
                 ))}
@@ -176,9 +182,9 @@ export default function ResultPage() {
 
           {/* Neighbouring plot alert */}
           {result.neighbouring_plot_risk && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4" role="alert">
               <p className="text-sm font-medium text-amber-800">
-                ⚠ Neighbouring plots at risk
+                <span aria-hidden="true">⚠ </span>Neighbouring plots at risk
               </p>
               <p className="mt-1 text-sm text-amber-700">
                 {result.neighbouring_plot_risk}
@@ -209,7 +215,7 @@ export default function ResultPage() {
       <div className="min-h-screen bg-white px-5 py-6">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
-            <span className="text-3xl">⚠️</span>
+            <span className="text-3xl" aria-hidden="true">⚠️</span>
           </div>
           <h1 className="text-xl font-bold text-gray-900">
             My best assessment &mdash; I&apos;m not fully certain
@@ -222,7 +228,7 @@ export default function ResultPage() {
           </span>
         </div>
 
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4" role="alert">
           <p className="text-sm text-amber-800">
             I see signs that suggest{" "}
             <strong>{result.diagnosis || "a potential issue"}</strong> but
@@ -258,7 +264,7 @@ export default function ResultPage() {
         {/* Expert task */}
         <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
           <p className="text-sm font-medium text-blue-800">
-            📋 Task created: Get expert verification within 3 days
+            <span aria-hidden="true">📋 </span>Task created: Get expert verification within 3 days
           </p>
         </div>
 
@@ -282,14 +288,14 @@ export default function ResultPage() {
     <div className="min-h-screen bg-white px-5 py-6">
       <div className="mb-6 flex flex-col items-center text-center">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
-          <span className="text-3xl">🤔</span>
+          <span className="text-3xl" aria-hidden="true">🤔</span>
         </div>
         <h1 className="text-xl font-bold text-gray-900">
           I need an expert&apos;s help here
         </h1>
       </div>
 
-      <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 p-4">
+      <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 p-4" role="alert">
         <p className="text-sm text-orange-800">
           I can see your crop is stressed but I&apos;m not confident enough to
           diagnose this safely. Giving you the wrong treatment could make it

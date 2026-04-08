@@ -79,7 +79,7 @@ export default function ResearchPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-green-50 px-6">
       {error ? (
-        <div className="text-center">
+        <div className="text-center" role="alert">
           <p className="text-lg text-red-600">{error}</p>
           <button
             onClick={handleRetry}
@@ -100,6 +100,8 @@ export default function ResearchPage() {
           {/* Cycling message */}
           <p
             key={messageIndex}
+            role="status"
+            aria-live="polite"
             className="animate-fade-in text-center text-lg font-medium text-green-800"
           >
             {MESSAGES[messageIndex]}
