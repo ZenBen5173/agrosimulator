@@ -17,8 +17,10 @@ import {
   Droplets,
   Layers,
   Ruler,
+  FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import Card from "@/components/ui/Card";
 import { SkeletonCard, SkeletonLine, SkeletonCircle } from "@/components/ui/Skeleton";
 import toast from "react-hot-toast";
@@ -43,6 +45,23 @@ interface Preferences {
   weather_alerts: boolean;
   harvest_reminders: boolean;
   task_reminders: boolean;
+}
+
+interface ReferralItem {
+  id: string;
+  plot_id: string;
+  status: "pending" | "responded" | "resolved";
+  case_package_json: {
+    crop_name?: string;
+    plot_label?: string;
+    confidence?: number;
+    photo_count?: number;
+    referred_date?: string;
+  };
+  expert_response: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  plots: { label: string; crop_name: string } | null;
 }
 
 function getInitials(name: string | null): string {
@@ -84,6 +103,15 @@ export default function ProfilePage() {
   // Export state
   const [exporting, setExporting] = useState(false);
 
+  // Referrals
+  const [referrals, setReferrals] = useState<ReferralItem[]>([]);
+  const [referralsLoading, setReferralsLoading] = useState(true);
+  const [expandedReferral, setExpandedReferral] = useState<string | null>(null);
+
+  // Push notifications
+  const { isSupported: pushSupported, permission: pushPermission, subscription: pushSub, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePushNotifications();
+  const [pushLoading, setPushLoading] = useState(false);
+
   const fetchProfile = useCallback(async () => {
     try {
       const res = await fetch("/api/profile");
@@ -113,9 +141,24 @@ export default function ProfilePage() {
     }
   }, [router]);
 
+  const fetchReferrals = useCallback(async () => {
+    try {
+      const res = await fetch("/api/referral");
+      if (res.ok) {
+        const data = await res.json();
+        setReferrals(data.referrals || []);
+      }
+    } catch (err) {
+      console.error("Failed to load referrals:", err);
+    } finally {
+      setReferralsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchProfile();
-  }, [fetchProfile]);
+    fetchReferrals();
+  }, [fetchProfile, fetchReferrals]);
 
   const startEditing = () => {
     setEditName(profile?.full_name || "");
@@ -404,7 +447,190 @@ export default function ProfilePage() {
               checked={preferences.task_reminders}
               onChange={(v) => togglePreference("task_reminders", v)}
             />
+
+            {/* Push notifications */}
+            {pushSupported && (
+              <div className="mt-2 border-t border-gray-100 pt-2">
+                {pushPermission === "denied" ? (
+                  <div className="rounded-xl bg-red-50 px-3 py-3">
+                    <div className="text-sm font-medium text-red-700">
+                      Push Notifications Blocked
+                    </div>
+                    <div className="text-xs text-red-500">
+                      Enable in your browser settings to receive alerts
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex cursor-pointer items-center justify-between rounded-xl px-2 py-3 transition hover:bg-gray-50">
+                    <div className="pr-4">
+                      <div className="text-sm font-medium text-gray-800">
+                        Push Notifications
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Receive alerts even when app is closed
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={!!pushSub}
+                        disabled={pushLoading}
+                        onChange={async (e) => {
+                          setPushLoading(true);
+                          try {
+                            if (e.target.checked) {
+                              await pushSubscribe();
+                              toast.success("Push notifications enabled");
+                            } else {
+                              await pushUnsubscribe();
+                              toast.success("Push notifications disabled");
+                            }
+                          } catch {
+                            toast.error("Failed to update push settings");
+                          } finally {
+                            setPushLoading(false);
+                          }
+                        }}
+                        className="peer sr-only"
+                      />
+                      <div className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-500" />
+                      <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+                    </div>
+                  </label>
+                )}
+              </div>
+            )}
           </div>
+        </Card>
+
+        {/* ───── My Referrals ───── */}
+        <Card variant="elevated" className="p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50">
+              <FileText size={16} className="text-orange-600" />
+            </div>
+            <h3 className="font-semibold text-gray-900">My Referrals</h3>
+          </div>
+
+          {referralsLoading ? (
+            <div className="space-y-2">
+              <div className="h-16 animate-pulse rounded-xl bg-gray-100" />
+              <div className="h-16 animate-pulse rounded-xl bg-gray-100" />
+            </div>
+          ) : referrals.length === 0 ? (
+            <div className="rounded-xl bg-gray-50 px-4 py-6 text-center">
+              <p className="text-sm text-gray-400">No expert referrals yet</p>
+              <p className="mt-1 text-xs text-gray-300">
+                Referrals appear here when AI cannot diagnose a crop issue
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {referrals.map((ref) => {
+                const statusStyles = {
+                  pending: {
+                    badge: "bg-amber-100 text-amber-700",
+                    dot: "bg-amber-400",
+                  },
+                  responded: {
+                    badge: "bg-blue-100 text-blue-700",
+                    dot: "bg-blue-400",
+                  },
+                  resolved: {
+                    badge: "bg-green-100 text-green-700",
+                    dot: "bg-green-400",
+                  },
+                };
+                const style = statusStyles[ref.status];
+                const plotLabel =
+                  ref.plots?.label ||
+                  ref.case_package_json?.plot_label ||
+                  "Unknown";
+                const cropName =
+                  ref.plots?.crop_name ||
+                  ref.case_package_json?.crop_name ||
+                  "Unknown";
+                const date = new Date(ref.created_at).toLocaleDateString(
+                  "en-MY",
+                  { day: "numeric", month: "short", year: "numeric" }
+                );
+                const isExpanded = expandedReferral === ref.id;
+
+                return (
+                  <button
+                    key={ref.id}
+                    onClick={() =>
+                      setExpandedReferral(isExpanded ? null : ref.id)
+                    }
+                    className="w-full rounded-xl border border-gray-100 bg-gray-50 p-3 text-left transition hover:bg-gray-100"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-800">
+                            {plotLabel}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {cropName}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-gray-400">{date}</p>
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${style.dot}`}
+                        />
+                        {ref.status.charAt(0).toUpperCase() +
+                          ref.status.slice(1)}
+                      </span>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
+                        {ref.case_package_json?.confidence != null && (
+                          <div className="text-xs text-gray-500">
+                            AI Confidence:{" "}
+                            {Math.round(ref.case_package_json.confidence * 100)}
+                            %
+                          </div>
+                        )}
+                        {ref.case_package_json?.photo_count != null && (
+                          <div className="text-xs text-gray-500">
+                            Photos: {ref.case_package_json.photo_count}
+                          </div>
+                        )}
+                        {ref.expert_response && (
+                          <div className="rounded-lg bg-blue-50 p-2">
+                            <p className="text-[10px] font-medium text-blue-700">
+                              Expert Response:
+                            </p>
+                            <p className="mt-0.5 text-xs text-blue-600">
+                              {ref.expert_response}
+                            </p>
+                          </div>
+                        )}
+                        {ref.resolved_at && (
+                          <div className="text-xs text-green-600">
+                            Resolved:{" "}
+                            {new Date(ref.resolved_at).toLocaleDateString(
+                              "en-MY",
+                              {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              }
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </Card>
 
         {/* ───── Actions ───── */}

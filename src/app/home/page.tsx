@@ -17,6 +17,7 @@ import { useFarmStore } from "@/stores/farmStore";
 import PlotBottomSheet from "@/components/PlotBottomSheet";
 import SummaryCards from "@/components/home/SummaryCards";
 import PlotCardRow from "@/components/home/PlotCardRow";
+import FarmSwitcher from "@/components/home/FarmSwitcher";
 import NotificationBell from "@/components/NotificationBell";
 import Card from "@/components/ui/Card";
 import { SkeletonCard, SkeletonLine } from "@/components/ui/Skeleton";
@@ -117,7 +118,7 @@ export default function HomePage() {
 
   // Global store
   const store = useFarmStore();
-  const { farm, plots, weather, tasks, marketPrices, selectedPlot, plotWarnings } =
+  const { farm, farms, plots, weather, tasks, marketPrices, selectedPlot, plotWarnings } =
     store;
 
   const [loading, setLoading] = useState(true);
@@ -135,44 +136,74 @@ export default function HomePage() {
           return;
         }
 
-        const { data: farmRow } = await supabase
+        const { data: allFarms } = await supabase
           .from("farms")
           .select(
             "id, name, area_acres, grid_size, soil_type, water_source, polygon_geojson, bounding_box"
           )
           .eq("onboarding_done", true)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
+          .order("created_at", { ascending: false });
 
-        if (!farmRow) {
+        if (!allFarms || allFarms.length === 0) {
           router.replace("/onboarding");
           return;
         }
 
+        store.setFarms(allFarms);
+
+        // Select the previously active farm if it still exists, otherwise the first one
+        const prevFarmId = store.farm?.id;
+        const farmRow =
+          (prevFarmId && allFarms.find((f) => f.id === prevFarmId)) ||
+          allFarms[0];
+
         store.setFarm(farmRow);
 
-        // Fetch plots and market_prices in parallel
-        const [plotsRes, pricesRes] = await Promise.all([
+        // Fetch plots and market prices in parallel
+        const [plotsRes, pricesApiRes] = await Promise.all([
           supabase
             .from("plots")
             .select(
               "id, label, crop_name, growth_stage, warning_level, colour_hex, planted_date, expected_harvest, photo_url"
             )
             .eq("farm_id", farmRow.id),
-          supabase
-            .from("market_prices")
-            .select(
-              "item_name, item_type, price_per_kg, unit, trend, trend_pct"
-            )
-            .order("item_type")
-            .order("item_name"),
+          fetch("/api/market-prices").then((r) =>
+            r.ok ? r.json() : { prices: [] }
+          ),
         ]);
 
         const plotRows: PlotData[] = plotsRes.data || [];
         store.setPlots(plotRows);
-        store.setMarketPrices(pricesRes.data || []);
+
+        const prices: MarketPrice[] = pricesApiRes.prices || [];
+        store.setMarketPrices(prices);
         setLoading(false);
+
+        // Check if prices are stale (updated_at > 24h ago) and refresh
+        const STALE_MS = 24 * 60 * 60 * 1000;
+        const isStale =
+          prices.length === 0 ||
+          prices.some((p: MarketPrice) => {
+            if (!p.updated_at) return true;
+            return Date.now() - new Date(p.updated_at).getTime() > STALE_MS;
+          });
+
+        if (isStale) {
+          try {
+            const refreshRes = await fetch("/api/market-prices/refresh", {
+              method: "POST",
+            });
+            if (refreshRes.ok) {
+              const freshRes = await fetch("/api/market-prices");
+              if (freshRes.ok) {
+                const freshData = await freshRes.json();
+                store.setMarketPrices(freshData.prices || []);
+              }
+            }
+          } catch {
+            // Non-critical — stale prices still usable
+          }
+        }
 
         // Non-blocking: weather
         try {
@@ -511,12 +542,15 @@ export default function HomePage() {
           </span>
         </div>
 
-        {/* Top-right: Farm name + bell */}
-        <div className="absolute top-4 right-4 z-[1000] flex items-center gap-2">
-          <NotificationBell />
-          <span className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-gray-700 shadow backdrop-blur-sm">
-            {farm.name || "My Farm"}
-          </span>
+        {/* Top-right: Farm name + bell + switcher */}
+        <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <span className="rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-gray-700 shadow backdrop-blur-sm">
+              {farm.name || "My Farm"}
+            </span>
+          </div>
+          <FarmSwitcher />
         </div>
 
         {/* Bottom-right: Redraw boundary button */}

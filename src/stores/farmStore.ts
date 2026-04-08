@@ -41,6 +41,7 @@ interface WeatherData {
 
 interface FarmStore {
   farm: FarmRow | null;
+  farms: FarmRow[];
   plots: PlotData[];
   weather: WeatherData | null;
   tasks: TaskData[];
@@ -50,6 +51,7 @@ interface FarmStore {
   plotWarnings: Record<string, { warningLevel: string; warningReason: string }>;
 
   setFarm: (farm: FarmRow) => void;
+  setFarms: (farms: FarmRow[]) => void;
   setPlots: (plots: PlotData[]) => void;
   updatePlot: (plotId: string, updates: Partial<PlotData>) => void;
   setWeather: (weather: WeatherData) => void;
@@ -67,6 +69,7 @@ interface FarmStore {
 
 export const useFarmStore = create<FarmStore>((set) => ({
   farm: null,
+  farms: [],
   plots: [],
   weather: null,
   tasks: [],
@@ -76,6 +79,7 @@ export const useFarmStore = create<FarmStore>((set) => ({
   plotWarnings: {},
 
   setFarm: (farm) => set({ farm }),
+  setFarms: (farms) => set({ farms }),
   setPlots: (plots) => set({ plots }),
   updatePlot: (plotId, updates) =>
     set((state) => ({

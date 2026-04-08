@@ -28,6 +28,7 @@ export interface MarketPrice {
   unit: string;
   trend: string;
   trend_pct: number;
+  updated_at?: string;
 }
 
 export interface TaskData {

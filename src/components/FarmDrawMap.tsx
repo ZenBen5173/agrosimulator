@@ -207,7 +207,7 @@ export default function FarmDrawMap() {
 
     const { error } = await supabase.from("farms").insert({
       user_id: user.id,
-      polygon_geojson: geojson,
+      polygon_geojson: geojson.geometry,
       bounding_box: boundingBox,
       area_acres: Math.round(areaAcres * 100) / 100,
       grid_size: gridSize,

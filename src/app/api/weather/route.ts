@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { sendPushToUser } from "@/lib/pushNotify";
 
 interface ForecastDay {
   date: string;
@@ -275,6 +276,21 @@ export async function GET(request: Request) {
         wind_kmh: result.wind_kmh,
         forecast_json: result.forecast,
       });
+    }
+
+    // Send push for severe weather (non-blocking)
+    if (
+      result.condition === "thunderstorm" ||
+      result.condition === "flood_risk"
+    ) {
+      const label =
+        result.condition === "thunderstorm" ? "Thunderstorm" : "Flood Risk";
+      sendPushToUser(user.id, {
+        title: `Weather Warning: ${label}`,
+        body: `${label} conditions detected near your farm. Take precautions to protect your crops.`,
+        url: "/home",
+        tag: "weather-alert",
+      }).catch(() => {});
     }
 
     return NextResponse.json(result);

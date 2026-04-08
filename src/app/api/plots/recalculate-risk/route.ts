@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { assessRisk } from "@/services/ai/riskScoring";
+import { sendPushToUser } from "@/lib/pushNotify";
 
 export async function POST(request: Request) {
   try {
@@ -150,7 +151,20 @@ export async function POST(request: Request) {
       await supabase.from("plot_events").insert(eventRows);
     }
 
-    return NextResponse.json({ plots: riskResults });
+    // Send push notification for high-risk plots (non-blocking)
+    const highRisk = riskResults.filter(
+      (r) => r.warning_level === "orange" || r.warning_level === "red"
+    );
+    if (highRisk.length > 0) {
+      sendPushToUser(user.id, {
+        title: "Plot Alert",
+        body: `${highRisk.length} plot(s) need attention: ${highRisk.map((r) => r.label).join(", ")}`,
+        url: "/home",
+        tag: "risk-alert",
+      }).catch(() => {});
+    }
+
+    return NextResponse.json({ plots: riskResults, scored: true });
   } catch (err) {
     console.error("Risk recalculation error:", err);
     return NextResponse.json(
