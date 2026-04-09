@@ -107,7 +107,7 @@ const PRIORITY_STYLE: Record<
   string,
   { bg: string; text: string; label: string }
 > = {
-  urgent: { bg: "bg-red-100", text: "text-red-700", label: "Urgent" },
+  urgent: { bg: "bg-red-500", text: "text-white", label: "Urgent" },
   normal: { bg: "bg-amber-100", text: "text-amber-700", label: "Normal" },
   low: { bg: "bg-gray-100", text: "text-gray-600", label: "Low" },
 };
@@ -574,12 +574,16 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Top-left: Weather badge */}
-        <div className="absolute top-4 left-4 z-[1000] rounded-full bg-white/80 px-3 py-1.5 shadow backdrop-blur-sm">
+        {/* Top-left: Weather badge — tappable */}
+        <button
+          onClick={() => router.push("/weather")}
+          className="absolute top-4 left-4 z-[1000] rounded-2xl bg-white/90 backdrop-blur-md px-4 py-2 shadow-md transition-shadow hover:shadow-lg active:scale-[0.97]"
+          aria-label="View full weather details"
+        >
           <span className="text-sm font-medium text-gray-700">
             {weatherEmoji} {weatherLabel} · {weatherTemp}°C
           </span>
-        </div>
+        </button>
 
         {/* Top-right: Farm name + bell + switcher */}
         <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-1.5">
@@ -600,10 +604,31 @@ export default function HomePage() {
         >
           ✏️ Edit boundary
         </button>
+
+        {/* Gradient fade at bottom of map */}
+        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-gray-50 to-transparent z-[999] pointer-events-none" />
       </div>
 
       {/* Scrollable content */}
       <div className="-mt-5 relative z-10 rounded-t-3xl bg-gray-50 px-4 pt-5 pb-4">
+        {/* Greeting */}
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-500">
+              {new Date().toLocaleDateString("en-MY", { weekday: "long", day: "numeric", month: "long" })}
+            </p>
+            <h1 className="text-xl font-bold text-gray-900">
+              Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"} 👋
+            </h1>
+          </div>
+          <button
+            onClick={() => router.push("/profile")}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-sm font-bold text-green-700"
+          >
+            {farm.name?.[0]?.toUpperCase() || "F"}
+          </button>
+        </div>
+
         {/* Summary Cards */}
         <div className="mb-5">
           <SummaryCards />
@@ -617,15 +642,16 @@ export default function HomePage() {
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={handleScanCrop}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-sm"
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 px-4 py-3 text-sm font-semibold text-white shadow-sm"
           >
+            <span aria-hidden="true">📷</span>
             <Search size={16} aria-hidden="true" />
             Scan crop
           </motion.button>
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={() => router.push("/activity")}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm border border-gray-200"
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-green-700 shadow-sm border border-green-200"
           >
             <Clock size={16} aria-hidden="true" />
             Farm history
@@ -635,9 +661,14 @@ export default function HomePage() {
         {/* Today's Tasks */}
         <Card variant="default" className="mb-5 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-bold text-gray-800">
-              Today&apos;s Tasks
-            </h3>
+            <div>
+              <h3 className="text-base font-bold text-gray-800">
+                Today&apos;s Tasks
+              </h3>
+              {tasks.length > 0 && (
+                <p className="text-xs text-gray-400">Your farm needs attention</p>
+              )}
+            </div>
             <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
               {tasks.length}
             </span>
@@ -657,7 +688,7 @@ export default function HomePage() {
                   <motion.div
                     initial={{ opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="flex items-start gap-3 rounded-xl bg-gray-50 px-3 py-2.5"
+                    className="flex items-start gap-3 rounded-2xl bg-white border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] px-3.5 py-3"
                   >
                     <button
                       onClick={() => handleCompleteTask(task.id)}
@@ -704,20 +735,29 @@ export default function HomePage() {
         </Card>
 
         {/* 5-Day Forecast */}
-        <Card variant="default" className="mb-5 p-4">
-          <h3 className="mb-3 text-base font-bold text-gray-800">
-            5-Day Forecast
-          </h3>
+        <Card
+          variant="default"
+          className="mb-5 p-4 cursor-pointer transition-shadow hover:shadow-md active:scale-[0.99]"
+          onClick={() => router.push("/weather")}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-bold text-gray-800">
+              5-Day Forecast
+            </h3>
+            <span className="text-xs font-medium text-green-600">
+              See details &rarr;
+            </span>
+          </div>
           <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
             {forecastDays.map((day) => (
               <div
                 key={day.date}
-                className="flex min-w-[64px] flex-shrink-0 flex-col items-center rounded-xl bg-blue-50/60 px-2.5 py-2"
+                className="flex min-w-[64px] flex-shrink-0 flex-col items-center rounded-2xl bg-white border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] px-3 py-2.5"
               >
-                <span className="text-[10px] font-medium text-gray-500">
+                <span className="text-[10px] font-semibold text-gray-500">
                   {getDayName(day.date)}
                 </span>
-                <span className="my-1 text-lg">
+                <span className="my-1 text-2xl">
                   {FORECAST_EMOJI[day.condition] || "☀️"}
                 </span>
                 <span className="text-xs font-semibold text-gray-700">
@@ -735,15 +775,30 @@ export default function HomePage() {
 
         {/* Market Prices */}
         {crops.length > 0 && (
-          <Card variant="default" className="mb-5 p-4">
-            <h3 className="mb-3 text-base font-bold text-gray-800">
-              Market Prices
-            </h3>
+          <Card
+            variant="default"
+            className="mb-5 p-4 cursor-pointer transition-shadow hover:shadow-md active:scale-[0.99]"
+            onClick={() => router.push("/market")}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-gray-800">
+                Market Prices
+              </h3>
+              <span className="text-xs font-medium text-green-600">
+                See all &rarr;
+              </span>
+            </div>
             <div className="space-y-1.5">
-              {crops.map((p) => (
+              {crops.slice(0, 4).map((p) => (
                 <div
                   key={p.item_name}
-                  className="flex items-center justify-between rounded-lg px-1 py-1.5"
+                  className={`flex items-center justify-between rounded-lg px-1 py-1.5 border-l-2 ${
+                    p.trend === "up"
+                      ? "border-green-400"
+                      : p.trend === "down"
+                        ? "border-red-400"
+                        : "border-gray-200"
+                  }`}
                 >
                   <span className="text-sm text-gray-700">{p.item_name}</span>
                   <div className="flex items-center gap-1.5">
@@ -773,15 +828,30 @@ export default function HomePage() {
 
         {/* Supplies */}
         {supplies.length > 0 && (
-          <Card variant="default" className="mb-5 p-4">
-            <h3 className="mb-3 text-base font-bold text-gray-800">
-              Fertilizers &amp; Pesticides
-            </h3>
+          <Card
+            variant="default"
+            className="mb-5 p-4 cursor-pointer transition-shadow hover:shadow-md active:scale-[0.99]"
+            onClick={() => router.push("/market")}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-gray-800">
+                Fertilizers &amp; Pesticides
+              </h3>
+              <span className="text-xs font-medium text-green-600">
+                See all &rarr;
+              </span>
+            </div>
             <div className="space-y-1.5">
               {supplies.map((p) => (
                 <div
                   key={p.item_name}
-                  className="flex items-center justify-between rounded-lg px-1 py-1.5"
+                  className={`flex items-center justify-between rounded-lg px-1 py-1.5 border-l-2 ${
+                    p.trend === "up"
+                      ? "border-green-400"
+                      : p.trend === "down"
+                        ? "border-red-400"
+                        : "border-gray-200"
+                  }`}
                 >
                   <span className="text-sm text-gray-700">{p.item_name}</span>
                   <div className="flex items-center gap-1.5">

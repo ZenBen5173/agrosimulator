@@ -114,3 +114,35 @@ body {
     background: ButtonText;
   }
 }
+
+/* Premium card hover/active states */
+.card-press {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-press:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* Smooth page transitions */
+main {
+  animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Better scrollbar for horizontal scroll areas */
+.plot-scroll::-webkit-scrollbar {
+  height: 0;
+  display: none;
+}
+
+/* Gradient text utility */
+.text-gradient-green {
+  background: linear-gradient(135deg, #16a34a, #059669);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

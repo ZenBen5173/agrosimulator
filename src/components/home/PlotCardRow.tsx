@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import ProgressRing from "@/components/ui/ProgressRing";
 import { useFarmStore } from "@/stores/farmStore";
@@ -22,6 +23,7 @@ function getProgress(planted: string | null, harvest: string | null): number {
 }
 
 export default function PlotCardRow() {
+  const router = useRouter();
   const plots = useFarmStore((s) => s.plots);
   const setSelectedPlot = useFarmStore((s) => s.setSelectedPlot);
 
@@ -29,7 +31,15 @@ export default function PlotCardRow() {
 
   return (
     <div className="mb-4">
-      <h3 className="mb-2 text-sm font-bold text-gray-800">Your Plots</h3>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-bold text-gray-800">Your Plots</h3>
+        <button
+          onClick={() => router.push("/farm")}
+          className="text-xs font-medium text-green-600"
+        >
+          See all &rarr;
+        </button>
+      </div>
       <div className="relative">
         <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
           {plots.map((plot, i) => {
@@ -49,12 +59,16 @@ export default function PlotCardRow() {
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setSelectedPlot(plot)}
                 aria-label={`Plot ${plot.label}: ${plot.crop_name}, ${growthPercent}% grown${plot.warning_level !== "none" ? ", warning: " + plot.warning_level : ""}`}
-                className="relative flex min-w-[100px] flex-shrink-0 flex-col items-center rounded-2xl bg-white p-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)] border border-gray-100"
+                className="relative flex min-w-[110px] flex-shrink-0 flex-col items-center rounded-2xl bg-white p-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)] border border-gray-100 overflow-hidden"
               >
                 {/* Colour stripe */}
                 <div
-                  className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl"
-                  style={{ backgroundColor: plot.colour_hex }}
+                  className={`absolute top-0 left-0 right-0 h-1 rounded-t-2xl ${
+                    plot.warning_level === "red" ? "bg-red-500" :
+                    plot.warning_level === "orange" ? "bg-orange-500" :
+                    plot.warning_level === "yellow" ? "bg-yellow-500" :
+                    "bg-gradient-to-r from-green-400 to-emerald-500"
+                  }`}
                   aria-hidden="true"
                 />
 
@@ -67,7 +81,7 @@ export default function PlotCardRow() {
                   progress={progress}
                   size={48}
                   strokeWidth={4}
-                  color={ringColor}
+                  color={plot.colour_hex || ringColor}
                 >
                   <span className="text-xs font-bold text-gray-700">
                     {growthPercent}%
@@ -77,7 +91,7 @@ export default function PlotCardRow() {
                 <span className="mt-2 text-xs font-bold text-gray-800">
                   {plot.label}
                 </span>
-                <span className="text-[10px] text-gray-500 truncate max-w-[80px]">
+                <span className="text-[10px] font-semibold text-gray-500 truncate max-w-[80px]">
                   {plot.crop_name}
                 </span>
                 {justPlanted && (

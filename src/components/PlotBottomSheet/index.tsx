@@ -187,7 +187,7 @@ export default function PlotBottomSheet({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="fixed right-0 bottom-0 left-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white pt-3 px-5 pb-20 shadow-[0_-8px_40px_rgba(0,0,0,0.15)]"
+            className="fixed right-0 bottom-0 left-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white pt-3 px-5 pb-20 shadow-[0_-8px_40px_rgba(0,0,0,0.15)] relative"
             onTouchStart={onTouchStart}
             onTouchEnd={onTouchEnd}
           >
@@ -195,6 +195,9 @@ export default function PlotBottomSheet({
             <div className="mb-3 flex justify-center">
               <div className="h-1 w-10 rounded-full bg-gray-300" />
             </div>
+
+            {/* Subtle header accent */}
+            <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-green-50/50 to-transparent pointer-events-none rounded-t-3xl" />
 
             {/* Header: crop emoji + ring + info */}
             <div className="mb-4 flex items-center gap-4">

@@ -25,7 +25,7 @@ export default function Card({
 }: CardProps) {
   return (
     <motion.div
-      className={`${variantStyles[variant]} ${className}`}
+      className={`${variantStyles[variant]} ${pressable ? "card-press" : ""} ${className}`}
       whileTap={pressable ? { scale: 0.97 } : undefined}
       {...props}
     >

@@ -9,6 +9,8 @@ import {
   PenLine,
   ClipboardList,
   User,
+  BarChart3,
+  CloudSun,
 } from "lucide-react";
 import { useFarmStore } from "@/stores/farmStore";
 
@@ -19,9 +21,10 @@ interface FabMenuProps {
 
 const FAB_ACTIONS = [
   { key: "scan", label: "Scan Crop", icon: Search, href: "/inspection", color: "bg-green-500", needsPlot: true },
-  { key: "add-farm", label: "Add New Farm", icon: MapPlus, href: "/onboarding", color: "bg-blue-500", needsPlot: false },
+  { key: "weather", label: "Weather", icon: CloudSun, href: "/weather", color: "bg-sky-500", needsPlot: false },
+  { key: "market", label: "Market Prices", icon: BarChart3, href: "/market", color: "bg-purple-500", needsPlot: false },
+  { key: "add-farm", label: "Add Farm", icon: MapPlus, href: "/onboarding", color: "bg-blue-500", needsPlot: false },
   { key: "redraw", label: "Edit Boundary", icon: PenLine, href: "/farm/redraw", color: "bg-amber-500", needsPlot: false },
-  { key: "activity", label: "Log Activity", icon: ClipboardList, href: "/activity", color: "bg-teal-500", needsPlot: false },
   { key: "profile", label: "Profile", icon: User, href: "/profile", color: "bg-gray-500", needsPlot: false },
 ];
 
@@ -150,7 +153,7 @@ export default function FabMenu({ open, onClose }: FabMenuProps) {
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="grid grid-cols-5 gap-1"
+              className="grid grid-cols-3 gap-1"
             >
               {FAB_ACTIONS.map((action) => {
                 const Icon = action.icon;

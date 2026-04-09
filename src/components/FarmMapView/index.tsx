@@ -154,11 +154,11 @@ export default function FarmMapView({
 
       // Farm boundary outline
       L.polygon(coords, {
-        color: "#22c55e",
+        color: "#16a34a",
         weight: 3,
-        fillColor: "#22c55e",
-        fillOpacity: 0.08,
-        dashArray: "8, 4",
+        fillColor: "#16a34a",
+        fillOpacity: 0.05,
+        dashArray: "6, 3",
       }).addTo(map);
 
       // Inner highlight — slightly brighter fill
@@ -178,11 +178,11 @@ export default function FarmMapView({
       ];
 
       L.polygon(bbCoords, {
-        color: "#22c55e",
+        color: "#16a34a",
         weight: 3,
-        fillColor: "#22c55e",
-        fillOpacity: 0.1,
-        dashArray: "8, 4",
+        fillColor: "#16a34a",
+        fillOpacity: 0.05,
+        dashArray: "6, 3",
       }).addTo(map);
     }
 
@@ -194,11 +194,11 @@ export default function FarmMapView({
         );
         if (epCoords && epCoords.length > 0) {
           L.polygon(epCoords, {
-            color: "#22c55e",
+            color: "#16a34a",
             weight: 3,
-            fillColor: "#22c55e",
-            fillOpacity: 0.08,
-            dashArray: "8, 4",
+            fillColor: "#16a34a",
+            fillOpacity: 0.05,
+            dashArray: "6, 3",
           }).addTo(map);
         }
       }
@@ -229,10 +229,11 @@ export default function FarmMapView({
         // Colored zone polygon — always visible
         const zonePoly = L.polygon(zCoords, {
           color: warningBorder,
-          weight: hasWarning ? 3 : 2,
+          weight: hasWarning ? 3 : 2.5,
           fillColor: zone.colour,
-          fillOpacity: 0.35,
+          fillOpacity: 0.25,
           opacity: 0.9,
+          dashArray: "",
         }).addTo(map);
 
         zonePoly.on("click", () => {
@@ -249,25 +250,26 @@ export default function FarmMapView({
           className: "zone-label-icon",
           html: `<div style="
             display: flex;
-            flex-direction: column;
             align-items: center;
+            gap: 4px;
+            background: white;
+            padding: 4px 10px 4px 6px;
+            border-radius: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             pointer-events: none;
+            border: 2px solid ${zone.colour};
           ">
-            <span style="font-size: 22px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));">${emoji}</span>
+            <span style="font-size: 16px;">${emoji}</span>
             <span style="
-              margin-top: 1px;
-              font-size: 10px;
+              font-size: 11px;
               font-weight: 700;
-              color: white;
-              text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-              background: ${zone.colour}cc;
-              padding: 1px 6px;
-              border-radius: 8px;
+              color: #1f2937;
               white-space: nowrap;
+              letter-spacing: 0.01em;
             ">${zone.label} · ${zone.crop}</span>
           </div>`,
-          iconSize: [80, 44],
-          iconAnchor: [40, 22],
+          iconSize: [100, 30],
+          iconAnchor: [50, 15],
         });
 
         L.marker(center, { icon: detailIcon, interactive: true })
