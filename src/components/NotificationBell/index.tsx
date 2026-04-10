@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useFarmStore } from "@/stores/farmStore";
@@ -14,6 +15,7 @@ const TYPE_ICON: Record<string, string> = {
 };
 
 export default function NotificationBell() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const notifications = useFarmStore((s) => s.notifications);
   const markNotificationRead = useFarmStore((s) => s.markNotificationRead);
@@ -70,6 +72,14 @@ export default function NotificationBell() {
                   </button>
                 )}
               </div>
+
+              {/* Link to alerts page */}
+              <button
+                onClick={() => { setOpen(false); router.push("/alerts"); }}
+                className="w-full px-4 py-2 text-xs text-purple-600 font-medium bg-purple-50 hover:bg-purple-100 text-center"
+              >
+                View Farm Alerts &rarr;
+              </button>
 
               <div className="max-h-64 overflow-y-auto">
                 {notifications.length === 0 ? (

@@ -658,6 +658,20 @@ export default function HomePage() {
           </motion.button>
         </div>
 
+        {/* Prep List Quick Card */}
+        <button
+          onClick={() => router.push("/prep")}
+          className="mb-5 w-full rounded-2xl bg-gradient-to-r from-green-600 to-emerald-500 p-4 text-left text-white shadow-sm active:scale-[0.98] transition-transform"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium opacity-80">Today&apos;s Prep List</p>
+              <p className="text-sm font-bold mt-0.5">See what to bring to the farm &rarr;</p>
+            </div>
+            <span className="text-2xl">📋</span>
+          </div>
+        </button>
+
         {/* Today's Tasks */}
         <Card variant="default" className="mb-5 p-4">
           <div className="mb-3 flex items-center justify-between">

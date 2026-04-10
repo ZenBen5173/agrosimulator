@@ -52,6 +52,31 @@ export default function ResultPage() {
     setResult(JSON.parse(raw));
   }, [router]);
 
+  const createDiagnosisSession = async () => {
+    try {
+      const inspData = sessionStorage.getItem("inspection_data");
+      const parsed = inspData ? JSON.parse(inspData) : {};
+      if (result && parsed.farm_id && parsed.plot_id) {
+        await fetch("/api/diagnosis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            farm_id: parsed.farm_id,
+            plot_id: parsed.plot_id,
+            plot_event_id: parsed.plot_event_id || null,
+            layer_reached: 1,
+            final_confidence: result.confidence,
+            final_outcome: result.outcome,
+            diagnosis_name: result.diagnosis,
+            treatment_plan: result.treatment_steps,
+          }),
+        });
+      }
+    } catch (err) {
+      console.error("Failed to create diagnosis session:", err);
+    }
+  };
+
   if (!result) {
     return (
       <div className="flex h-screen items-center justify-center bg-white">
@@ -195,7 +220,8 @@ export default function ResultPage() {
 
         {/* CTA */}
         <button
-          onClick={() => {
+          onClick={async () => {
+            await createDiagnosisSession();
             sessionStorage.removeItem("inspection_data");
             sessionStorage.removeItem("analysis_result");
             sessionStorage.removeItem("diagnosis_result");
@@ -205,6 +231,9 @@ export default function ResultPage() {
         >
           I&apos;ll start treatment &rarr;
         </button>
+        <p className="mt-2 text-center text-xs text-gray-400">
+          A 5-day follow-up task will be created automatically
+        </p>
       </div>
     );
   }
