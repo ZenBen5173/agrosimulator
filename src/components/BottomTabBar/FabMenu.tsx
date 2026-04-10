@@ -7,10 +7,12 @@ import {
   Search,
   MapPlus,
   PenLine,
-  ClipboardList,
   User,
   BarChart3,
   CloudSun,
+  ClipboardCheck,
+  Package,
+  Wrench,
 } from "lucide-react";
 import { useFarmStore } from "@/stores/farmStore";
 
@@ -20,11 +22,14 @@ interface FabMenuProps {
 }
 
 const FAB_ACTIONS = [
+  { key: "prep", label: "Prep List", icon: ClipboardCheck, href: "/prep", color: "bg-green-600", needsPlot: false },
   { key: "scan", label: "Scan Crop", icon: Search, href: "/inspection", color: "bg-green-500", needsPlot: true },
+  { key: "inventory", label: "Inventory", icon: Package, href: "/inventory", color: "bg-purple-500", needsPlot: false },
   { key: "weather", label: "Weather", icon: CloudSun, href: "/weather", color: "bg-sky-500", needsPlot: false },
-  { key: "market", label: "Market Prices", icon: BarChart3, href: "/market", color: "bg-purple-500", needsPlot: false },
+  { key: "market", label: "Market", icon: BarChart3, href: "/market", color: "bg-indigo-500", needsPlot: false },
+  { key: "equipment", label: "Equipment", icon: Wrench, href: "/equipment", color: "bg-amber-500", needsPlot: false },
   { key: "add-farm", label: "Add Farm", icon: MapPlus, href: "/onboarding", color: "bg-blue-500", needsPlot: false },
-  { key: "redraw", label: "Edit Boundary", icon: PenLine, href: "/farm/redraw", color: "bg-amber-500", needsPlot: false },
+  { key: "redraw", label: "Edit Map", icon: PenLine, href: "/farm/redraw", color: "bg-teal-500", needsPlot: false },
   { key: "profile", label: "Profile", icon: User, href: "/profile", color: "bg-gray-500", needsPlot: false },
 ];
 

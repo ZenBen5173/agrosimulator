@@ -101,12 +101,13 @@ export async function POST(request: Request) {
       days_since_checked: p.days_since_checked,
     }));
 
-    // Generate tasks via Gemini
+    // Generate tasks via Genkit flow (passes farmId for autonomous tool use)
     const generated = await generateTasks(
       plotInput,
       weather,
       farm.soil_type || "loam",
-      farm.water_source || "rain_fed"
+      farm.water_source || "rain_fed",
+      farm_id
     );
 
     // Map plot labels to IDs
@@ -115,7 +116,7 @@ export async function POST(request: Request) {
       labelToId[p.label] = p.id;
     }
 
-    // Insert tasks into DB
+    // Insert tasks into DB (includes new resource fields from Genkit)
     const taskRows = generated.map((t) => ({
       farm_id,
       plot_id: t.plot_label ? labelToId[t.plot_label] || null : null,
@@ -127,6 +128,11 @@ export async function POST(request: Request) {
       completed: false,
       auto_generated: true,
       triggered_by: t.triggered_by,
+      resource_item: t.resource_item ?? null,
+      resource_quantity: t.resource_quantity ?? null,
+      resource_unit: t.resource_unit ?? null,
+      estimated_cost_rm: t.estimated_cost_rm ?? null,
+      timing_recommendation: t.timing_recommendation ?? null,
     }));
 
     const { data: inserted, error: insertError } = await supabase

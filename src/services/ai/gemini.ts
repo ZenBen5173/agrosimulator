@@ -1,4 +1,9 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+/**
+ * Farm research service — retrofitted to use Genkit.
+ * Keeps the same exported interface so API routes don't change.
+ */
+import { ai, DEFAULT_MODEL } from "@/lib/genkit";
+import { z } from "genkit";
 
 const SYSTEM_INSTRUCTION = `You are a Malaysian agricultural soil expert. Given GPS coordinates of a farm in Malaysia, identify the district and state, then research the typical soil type and water source for that area. Consider proximity to irrigation schemes (MADA, KADA, IADA, etc.) and typical geological profiles.
 
@@ -25,55 +30,55 @@ export interface FarmResearchResult {
   state: string | null;
 }
 
-const FALLBACK: FarmResearchResult = {
-  suggested_soil: "loam",
-  soil_confidence: "low",
-  soil_reasoning:
-    "Unable to determine soil type automatically. Please select your soil type based on what you know about your land.",
-  suggested_water: "rain_fed",
-  water_reasoning:
-    "Unable to determine water source automatically. Please select the water source you use.",
-  nearby_irrigation_scheme: null,
-  district: null,
-  state: null,
-};
+const OutputSchema = z.object({
+  suggested_soil: z.enum(["clay", "clay_loam", "loam", "sandy_loam", "sandy", "peat"]),
+  soil_confidence: z.enum(["high", "medium", "low"]),
+  soil_reasoning: z.string(),
+  suggested_water: z.enum(["rain_fed", "irrigated", "both"]),
+  water_reasoning: z.string(),
+  nearby_irrigation_scheme: z.string().nullable(),
+  district: z.string().nullable(),
+  state: z.string().nullable(),
+});
 
-const VALID_SOILS = ["clay", "clay_loam", "loam", "sandy_loam", "sandy", "peat"];
-const VALID_WATER = ["rain_fed", "irrigated", "both"];
-const VALID_CONFIDENCE = ["high", "medium", "low"];
+// ─── Genkit Flow ────────────────────────────────────────────
 
-function validate(data: Record<string, unknown>): FarmResearchResult | null {
-  if (
-    typeof data.suggested_soil !== "string" ||
-    !VALID_SOILS.includes(data.suggested_soil) ||
-    typeof data.soil_confidence !== "string" ||
-    !VALID_CONFIDENCE.includes(data.soil_confidence) ||
-    typeof data.soil_reasoning !== "string" ||
-    typeof data.suggested_water !== "string" ||
-    !VALID_WATER.includes(data.suggested_water) ||
-    typeof data.water_reasoning !== "string"
-  ) {
-    return null;
+export const researchFarmFlow = ai.defineFlow(
+  {
+    name: "researchFarm",
+    inputSchema: z.object({
+      lat: z.number(),
+      lng: z.number(),
+      areaAcres: z.number(),
+    }),
+    outputSchema: OutputSchema,
+  },
+  async ({ lat, lng, areaAcres }): Promise<z.infer<typeof OutputSchema>> => {
+    const prompt = `Research the farm at coordinates ${lat.toFixed(6)}°N, ${lng.toFixed(6)}°E in Malaysia. The farm is approximately ${areaAcres.toFixed(1)} acres. Identify the district and state from the coordinates, then determine the typical soil type and water source for farms in that area. Return JSON only.`;
+
+    const { output } = await ai.generate({
+      model: DEFAULT_MODEL,
+      system: SYSTEM_INSTRUCTION,
+      prompt,
+      output: { schema: OutputSchema },
+      config: { temperature: 0.3 },
+    });
+
+    if (output) return output;
+
+    const mock = getMockResult(lat, lng);
+    return {
+      ...mock,
+      suggested_soil: mock.suggested_soil as "clay" | "clay_loam" | "loam" | "sandy_loam" | "sandy" | "peat",
+      soil_confidence: mock.soil_confidence as "high" | "medium" | "low",
+      suggested_water: mock.suggested_water as "rain_fed" | "irrigated" | "both",
+    };
   }
+);
 
-  return {
-    suggested_soil: data.suggested_soil,
-    soil_confidence: data.soil_confidence,
-    soil_reasoning: data.soil_reasoning,
-    suggested_water: data.suggested_water,
-    water_reasoning: data.water_reasoning,
-    nearby_irrigation_scheme:
-      typeof data.nearby_irrigation_scheme === "string"
-        ? data.nearby_irrigation_scheme
-        : null,
-    district: typeof data.district === "string" ? data.district : null,
-    state: typeof data.state === "string" ? data.state : null,
-  };
-}
+// ─── Mock fallback ──────────────────────────────────────────
 
-// Mock response for dev/testing when Gemini quota is exhausted
 function getMockResult(lat: number, lng: number): FarmResearchResult {
-  // Northern peninsular (Kedah, Perlis, Penang area)
   if (lat > 5.5) {
     return {
       suggested_soil: "clay",
@@ -88,7 +93,6 @@ function getMockResult(lat: number, lng: number): FarmResearchResult {
       state: "Kedah",
     };
   }
-  // East coast (Kelantan, Terengganu)
   if (lng > 102.5) {
     return {
       suggested_soil: "sandy_loam",
@@ -103,7 +107,6 @@ function getMockResult(lat: number, lng: number): FarmResearchResult {
       state: "Kelantan",
     };
   }
-  // Central/south (Selangor, Johor, etc.)
   return {
     suggested_soil: "clay_loam",
     soil_confidence: "medium",
@@ -118,61 +121,19 @@ function getMockResult(lat: number, lng: number): FarmResearchResult {
   };
 }
 
+// ─── Public API (unchanged signature) ───────────────────────
+
 export async function researchFarm(
   boundingBox: { north: number; south: number; east: number; west: number },
   areaAcres: number
 ): Promise<FarmResearchResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === "your_gemini_api_key_here") {
-    console.warn("GEMINI_API_KEY not set, using mock data");
-    const lat = (boundingBox.north + boundingBox.south) / 2;
-    const lng = (boundingBox.east + boundingBox.west) / 2;
+  const lat = (boundingBox.north + boundingBox.south) / 2;
+  const lng = (boundingBox.east + boundingBox.west) / 2;
+
+  try {
+    return await researchFarmFlow({ lat, lng, areaAcres });
+  } catch (err) {
+    console.warn("Genkit researchFarm failed, using mock:", err);
     return getMockResult(lat, lng);
   }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-lite",
-    systemInstruction: SYSTEM_INSTRUCTION,
-  });
-
-  const lat = ((boundingBox.north + boundingBox.south) / 2).toFixed(6);
-  const lng = ((boundingBox.east + boundingBox.west) / 2).toFixed(6);
-
-  const prompt = `Research the farm at coordinates ${lat}°N, ${lng}°E in Malaysia. The farm is approximately ${areaAcres.toFixed(1)} acres. Identify the district and state from the coordinates, then determine the typical soil type and water source for farms in that area. Return JSON only.`;
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const result = await model.generateContent(prompt);
-      const text = result.response.text().trim();
-
-      // Strip markdown code fences if present
-      const cleaned = text
-        .replace(/^```json\s*/i, "")
-        .replace(/^```\s*/i, "")
-        .replace(/\s*```$/i, "")
-        .trim();
-
-      const parsed = JSON.parse(cleaned);
-      const validated = validate(parsed);
-      if (validated) return validated;
-
-      console.warn(`Gemini response failed validation (attempt ${attempt + 1})`);
-    } catch (err) {
-      // Retry after 2s on rate limit (429) before giving up
-      const is429 = err instanceof Error && err.message.includes("429");
-      if (is429 && attempt === 0) {
-        console.warn("Gemini 429 rate limit, retrying in 2s...");
-        await new Promise((r) => setTimeout(r, 2000));
-        continue;
-      }
-      console.error(`Gemini call failed (attempt ${attempt + 1}):`, err);
-    }
-  }
-
-  // All Gemini attempts failed — use mock data as fallback in dev
-  console.warn("Gemini failed after retries, using mock data");
-  const fallbackLat = (boundingBox.north + boundingBox.south) / 2;
-  const fallbackLng = (boundingBox.east + boundingBox.west) / 2;
-  return getMockResult(fallbackLat, fallbackLng);
 }

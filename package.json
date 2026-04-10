@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@genkit-ai/googleai": "^1.28.0",
     "@google/generative-ai": "^0.24.1",
     "@notionhq/client": "^5.16.0",
     "@supabase/ssr": "^0.10.0",
@@ -28,6 +29,7 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.1",
     "framer-motion": "^12.38.0",
+    "genkit": "^1.32.0",
     "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4",
     "lucide-react": "^1.7.0",
@@ -38,6 +40,7 @@
     "react-hot-toast": "^2.6.0",
     "recharts": "^3.8.1",
     "web-push": "^3.6.7",
+    "zod": "^4.3.6",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

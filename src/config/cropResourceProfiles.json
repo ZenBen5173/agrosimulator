@@ -1,0 +1,344 @@
+{
+  "Paddy": {
+    "seedling": {
+      "water_ml_per_m2_per_day": 6,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": "NPK 15-15-15",
+      "fertilizer_g_per_m2": 2,
+      "fertilizer_frequency_days": 14,
+      "pesticide_threshold_risk_score": 0.7,
+      "pesticide_type": "Chlorpyrifos",
+      "pesticide_ml_per_m2": 0.5,
+      "labour_minutes_per_plot": 20
+    },
+    "growing": {
+      "water_ml_per_m2_per_day": 8,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": "Urea (46-0-0)",
+      "fertilizer_g_per_m2": 5,
+      "fertilizer_frequency_days": 21,
+      "pesticide_threshold_risk_score": 0.6,
+      "pesticide_type": "Mancozeb",
+      "pesticide_ml_per_m2": 1.0,
+      "labour_minutes_per_plot": 25
+    },
+    "mature": {
+      "water_ml_per_m2_per_day": 5,
+      "water_skip_if_rain_mm": 8,
+      "fertilizer_type": "MOP (0-0-60)",
+      "fertilizer_g_per_m2": 3,
+      "fertilizer_frequency_days": 28,
+      "pesticide_threshold_risk_score": 0.5,
+      "pesticide_type": "Propiconazole",
+      "pesticide_ml_per_m2": 0.8,
+      "labour_minutes_per_plot": 15
+    },
+    "harvest_ready": {
+      "water_ml_per_m2_per_day": 2,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 0.9,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 45
+    },
+    "harvested": {
+      "water_ml_per_m2_per_day": 0,
+      "water_skip_if_rain_mm": 0,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 1.0,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 30
+    }
+  },
+  "Chilli": {
+    "seedling": {
+      "water_ml_per_m2_per_day": 3,
+      "water_skip_if_rain_mm": 2,
+      "fertilizer_type": "NPK 12-12-17",
+      "fertilizer_g_per_m2": 1.5,
+      "fertilizer_frequency_days": 10,
+      "pesticide_threshold_risk_score": 0.7,
+      "pesticide_type": "Imidacloprid",
+      "pesticide_ml_per_m2": 0.3,
+      "labour_minutes_per_plot": 15
+    },
+    "growing": {
+      "water_ml_per_m2_per_day": 5,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": "NPK 15-15-15",
+      "fertilizer_g_per_m2": 3,
+      "fertilizer_frequency_days": 14,
+      "pesticide_threshold_risk_score": 0.6,
+      "pesticide_type": "Mancozeb",
+      "pesticide_ml_per_m2": 0.8,
+      "labour_minutes_per_plot": 20
+    },
+    "mature": {
+      "water_ml_per_m2_per_day": 4,
+      "water_skip_if_rain_mm": 4,
+      "fertilizer_type": "NPK 12-12-17",
+      "fertilizer_g_per_m2": 2,
+      "fertilizer_frequency_days": 14,
+      "pesticide_threshold_risk_score": 0.5,
+      "pesticide_type": "Copper hydroxide",
+      "pesticide_ml_per_m2": 0.6,
+      "labour_minutes_per_plot": 20
+    },
+    "harvest_ready": {
+      "water_ml_per_m2_per_day": 3,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 0.8,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 35
+    },
+    "harvested": {
+      "water_ml_per_m2_per_day": 0,
+      "water_skip_if_rain_mm": 0,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 1.0,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 20
+    }
+  },
+  "Kangkung": {
+    "seedling": {
+      "water_ml_per_m2_per_day": 5,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": "Urea (46-0-0)",
+      "fertilizer_g_per_m2": 2,
+      "fertilizer_frequency_days": 7,
+      "pesticide_threshold_risk_score": 0.8,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 10
+    },
+    "growing": {
+      "water_ml_per_m2_per_day": 7,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": "NPK 15-15-15",
+      "fertilizer_g_per_m2": 3,
+      "fertilizer_frequency_days": 7,
+      "pesticide_threshold_risk_score": 0.7,
+      "pesticide_type": "Bacillus thuringiensis",
+      "pesticide_ml_per_m2": 0.5,
+      "labour_minutes_per_plot": 15
+    },
+    "mature": {
+      "water_ml_per_m2_per_day": 6,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": "Urea (46-0-0)",
+      "fertilizer_g_per_m2": 2,
+      "fertilizer_frequency_days": 7,
+      "pesticide_threshold_risk_score": 0.7,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 10
+    },
+    "harvest_ready": {
+      "water_ml_per_m2_per_day": 4,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 0.9,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 25
+    },
+    "harvested": {
+      "water_ml_per_m2_per_day": 0,
+      "water_skip_if_rain_mm": 0,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 1.0,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 15
+    }
+  },
+  "Banana": {
+    "seedling": {
+      "water_ml_per_m2_per_day": 4,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": "NPK 12-12-17",
+      "fertilizer_g_per_m2": 3,
+      "fertilizer_frequency_days": 30,
+      "pesticide_threshold_risk_score": 0.7,
+      "pesticide_type": "Carbendazim",
+      "pesticide_ml_per_m2": 0.5,
+      "labour_minutes_per_plot": 20
+    },
+    "growing": {
+      "water_ml_per_m2_per_day": 6,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": "NPK 15-15-15",
+      "fertilizer_g_per_m2": 5,
+      "fertilizer_frequency_days": 21,
+      "pesticide_threshold_risk_score": 0.6,
+      "pesticide_type": "Mancozeb",
+      "pesticide_ml_per_m2": 1.0,
+      "labour_minutes_per_plot": 25
+    },
+    "mature": {
+      "water_ml_per_m2_per_day": 5,
+      "water_skip_if_rain_mm": 6,
+      "fertilizer_type": "MOP (0-0-60)",
+      "fertilizer_g_per_m2": 4,
+      "fertilizer_frequency_days": 28,
+      "pesticide_threshold_risk_score": 0.5,
+      "pesticide_type": "Propiconazole",
+      "pesticide_ml_per_m2": 0.8,
+      "labour_minutes_per_plot": 20
+    },
+    "harvest_ready": {
+      "water_ml_per_m2_per_day": 3,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 0.8,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 40
+    },
+    "harvested": {
+      "water_ml_per_m2_per_day": 0,
+      "water_skip_if_rain_mm": 0,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 1.0,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 30
+    }
+  },
+  "Corn": {
+    "seedling": {
+      "water_ml_per_m2_per_day": 4,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": "NPK 15-15-15",
+      "fertilizer_g_per_m2": 2,
+      "fertilizer_frequency_days": 14,
+      "pesticide_threshold_risk_score": 0.7,
+      "pesticide_type": "Chlorpyrifos",
+      "pesticide_ml_per_m2": 0.4,
+      "labour_minutes_per_plot": 15
+    },
+    "growing": {
+      "water_ml_per_m2_per_day": 6,
+      "water_skip_if_rain_mm": 4,
+      "fertilizer_type": "Urea (46-0-0)",
+      "fertilizer_g_per_m2": 4,
+      "fertilizer_frequency_days": 21,
+      "pesticide_threshold_risk_score": 0.6,
+      "pesticide_type": "Mancozeb",
+      "pesticide_ml_per_m2": 0.8,
+      "labour_minutes_per_plot": 20
+    },
+    "mature": {
+      "water_ml_per_m2_per_day": 5,
+      "water_skip_if_rain_mm": 5,
+      "fertilizer_type": "MOP (0-0-60)",
+      "fertilizer_g_per_m2": 3,
+      "fertilizer_frequency_days": 28,
+      "pesticide_threshold_risk_score": 0.5,
+      "pesticide_type": "Propiconazole",
+      "pesticide_ml_per_m2": 0.6,
+      "labour_minutes_per_plot": 15
+    },
+    "harvest_ready": {
+      "water_ml_per_m2_per_day": 2,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 0.8,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 40
+    },
+    "harvested": {
+      "water_ml_per_m2_per_day": 0,
+      "water_skip_if_rain_mm": 0,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 1.0,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 25
+    }
+  },
+  "Sweet Potato": {
+    "seedling": {
+      "water_ml_per_m2_per_day": 3,
+      "water_skip_if_rain_mm": 2,
+      "fertilizer_type": "NPK 12-12-17",
+      "fertilizer_g_per_m2": 2,
+      "fertilizer_frequency_days": 14,
+      "pesticide_threshold_risk_score": 0.7,
+      "pesticide_type": "Imidacloprid",
+      "pesticide_ml_per_m2": 0.3,
+      "labour_minutes_per_plot": 15
+    },
+    "growing": {
+      "water_ml_per_m2_per_day": 4,
+      "water_skip_if_rain_mm": 3,
+      "fertilizer_type": "NPK 15-15-15",
+      "fertilizer_g_per_m2": 3,
+      "fertilizer_frequency_days": 21,
+      "pesticide_threshold_risk_score": 0.6,
+      "pesticide_type": "Bacillus thuringiensis",
+      "pesticide_ml_per_m2": 0.5,
+      "labour_minutes_per_plot": 20
+    },
+    "mature": {
+      "water_ml_per_m2_per_day": 3,
+      "water_skip_if_rain_mm": 4,
+      "fertilizer_type": "MOP (0-0-60)",
+      "fertilizer_g_per_m2": 4,
+      "fertilizer_frequency_days": 28,
+      "pesticide_threshold_risk_score": 0.6,
+      "pesticide_type": "Copper hydroxide",
+      "pesticide_ml_per_m2": 0.5,
+      "labour_minutes_per_plot": 15
+    },
+    "harvest_ready": {
+      "water_ml_per_m2_per_day": 1,
+      "water_skip_if_rain_mm": 2,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 0.8,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 45
+    },
+    "harvested": {
+      "water_ml_per_m2_per_day": 0,
+      "water_skip_if_rain_mm": 0,
+      "fertilizer_type": null,
+      "fertilizer_g_per_m2": 0,
+      "fertilizer_frequency_days": 0,
+      "pesticide_threshold_risk_score": 1.0,
+      "pesticide_type": null,
+      "pesticide_ml_per_m2": 0,
+      "labour_minutes_per_plot": 25
+    }
+  }
+}

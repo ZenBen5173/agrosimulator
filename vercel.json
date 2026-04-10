@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/intelligence-scan",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/weather-patterns",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}
