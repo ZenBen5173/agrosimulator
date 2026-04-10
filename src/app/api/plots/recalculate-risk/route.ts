@@ -106,8 +106,8 @@ export async function POST(request: Request) {
       recent_events: eventsByPlot[p.id] || [],
     }));
 
-    // Call Gemini risk assessment
-    const riskResults = await assessRisk(plotInput, weatherHistory);
+    // Call Genkit risk assessment flow (passes farmId for autonomous tool use)
+    const riskResults = await assessRisk(plotInput, weatherHistory, farm_id);
 
     // Update plots and insert events
     const labelToId: Record<string, string> = {};

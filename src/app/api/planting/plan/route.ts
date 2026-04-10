@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     trend_pct: m.trend_pct,
   }));
 
-  // Generate plan
+  // Generate plan via Genkit flow (passes farmId + plotId for autonomous tool use)
   const plan = await generatePlantingPlan(
     {
       label: plot.label,
@@ -95,7 +95,9 @@ export async function POST(request: NextRequest) {
     farm,
     diseaseHistory,
     weather,
-    marketPrices
+    marketPrices,
+    plot.farm_id,
+    plot.id
   );
 
   // Save to planting_plans table

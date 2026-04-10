@@ -13,6 +13,9 @@ import {
   ClipboardCheck,
   Package,
   Wrench,
+  Stethoscope,
+  Bell,
+  Camera,
 } from "lucide-react";
 import { useFarmStore } from "@/stores/farmStore";
 
@@ -24,12 +27,15 @@ interface FabMenuProps {
 const FAB_ACTIONS = [
   { key: "prep", label: "Prep List", icon: ClipboardCheck, href: "/prep", color: "bg-green-600", needsPlot: false },
   { key: "scan", label: "Scan Crop", icon: Search, href: "/inspection", color: "bg-green-500", needsPlot: true },
+  { key: "receipt", label: "Scan Receipt", icon: Camera, href: "/inventory/scan", color: "bg-violet-500", needsPlot: false },
+  { key: "diagnosis", label: "Treatments", icon: Stethoscope, href: "/diagnosis", color: "bg-teal-500", needsPlot: false },
   { key: "inventory", label: "Inventory", icon: Package, href: "/inventory", color: "bg-purple-500", needsPlot: false },
+  { key: "alerts", label: "Alerts", icon: Bell, href: "/alerts", color: "bg-red-500", needsPlot: false },
   { key: "weather", label: "Weather", icon: CloudSun, href: "/weather", color: "bg-sky-500", needsPlot: false },
   { key: "market", label: "Market", icon: BarChart3, href: "/market", color: "bg-indigo-500", needsPlot: false },
   { key: "equipment", label: "Equipment", icon: Wrench, href: "/equipment", color: "bg-amber-500", needsPlot: false },
   { key: "add-farm", label: "Add Farm", icon: MapPlus, href: "/onboarding", color: "bg-blue-500", needsPlot: false },
-  { key: "redraw", label: "Edit Map", icon: PenLine, href: "/farm/redraw", color: "bg-teal-500", needsPlot: false },
+  { key: "redraw", label: "Edit Map", icon: PenLine, href: "/farm/redraw", color: "bg-cyan-500", needsPlot: false },
   { key: "profile", label: "Profile", icon: User, href: "/profile", color: "bg-gray-500", needsPlot: false },
 ];
 
@@ -158,7 +164,7 @@ export default function FabMenu({ open, onClose }: FabMenuProps) {
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="grid grid-cols-3 gap-1"
+              className="grid grid-cols-4 gap-1"
             >
               {FAB_ACTIONS.map((action) => {
                 const Icon = action.icon;
