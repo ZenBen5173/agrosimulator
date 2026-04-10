@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   Droplets,
   Wind,
   Thermometer,
@@ -14,6 +13,7 @@ import {
   Sprout,
   RefreshCw,
 } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { createClient } from "@/lib/supabase/client";
 
@@ -478,28 +478,23 @@ export default function WeatherPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Hero header */}
-      <div className={`relative bg-gradient-to-b ${bgGrad} px-4 pt-4 pb-8`}>
-        {/* Nav row */}
-        <div className="flex items-center justify-between mb-6">
-          <button
-            onClick={() => router.back()}
-            className="rounded-full bg-white/30 p-2 backdrop-blur-sm"
-            aria-label="Go back"
-          >
-            <ArrowLeft size={20} className="text-white" />
-          </button>
+      <PageHeader
+        title="Weather"
+        action={
           <motion.button
             onClick={handleRefresh}
             whileTap={{ scale: 0.9 }}
             disabled={refreshing}
-            className="rounded-full bg-white/30 p-2 backdrop-blur-sm disabled:opacity-50"
+            className="rounded-full p-2 hover:bg-gray-100 transition-colors disabled:opacity-50"
             aria-label="Refresh weather"
           >
-            <RefreshCw size={18} className={`text-white ${refreshing ? "animate-spin" : ""}`} />
+            <RefreshCw size={18} className={`text-gray-500 ${refreshing ? "animate-spin" : ""}`} />
           </motion.button>
-        </div>
+        }
+      />
 
+      {/* Weather hero */}
+      <div className={`relative bg-gradient-to-b ${bgGrad} px-4 pt-4 pb-8`}>
         {/* Location */}
         <p className="text-sm text-white/80 font-medium mb-1">{location}</p>
 
@@ -531,7 +526,7 @@ export default function WeatherPage() {
         </div>
 
         {/* Monsoon badge */}
-        <div className="absolute top-4 right-14 rounded-full bg-white/20 px-3 py-1 backdrop-blur-sm">
+        <div className="absolute top-4 right-4 rounded-full bg-white/20 px-3 py-1 backdrop-blur-sm">
           <span className="text-[10px] text-white/80 font-medium">{monsoon}</span>
         </div>
       </div>

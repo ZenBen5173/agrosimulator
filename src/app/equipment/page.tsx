@@ -4,13 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   Plus,
   Wrench,
   AlertTriangle,
   TrendingDown,
   ChevronDown,
 } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 
 interface Equipment {
@@ -91,29 +91,10 @@ export default function EquipmentPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white px-4 pt-12 pb-6">
-        <div className="flex items-center gap-3 mb-3">
-          <button onClick={() => router.back()} className="p-1"><ArrowLeft size={24} /></button>
-          <h1 className="text-xl font-bold">Equipment</h1>
-          <button onClick={() => setShowAdd(!showAdd)} className="ml-auto p-2 rounded-full bg-white/20">
-            <Plus size={18} />
-          </button>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white/15 rounded-xl p-3 text-center">
-            <p className="text-lg font-bold">{items.length}</p>
-            <p className="text-xs opacity-80">Items</p>
-          </div>
-          <div className="bg-white/15 rounded-xl p-3 text-center">
-            <p className="text-lg font-bold">RM{totalValue.toFixed(0)}</p>
-            <p className="text-xs opacity-80">Total Value</p>
-          </div>
-          <div className="bg-white/15 rounded-xl p-3 text-center">
-            <p className="text-lg font-bold">RM{totalMonthlyDep.toFixed(0)}</p>
-            <p className="text-xs opacity-80">/month dep.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Equipment"
+        action={<button onClick={() => setShowAdd(!showAdd)} className="p-2 rounded-full hover:bg-gray-100"><Plus size={18} className="text-gray-500" /></button>}
+      />
 
       <div className="px-4 mt-4 space-y-3">
         <AnimatePresence>

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   ThumbsUp,
   Minus,
   ThumbsDown,
@@ -12,6 +11,7 @@ import {
   Stethoscope,
   AlertTriangle,
 } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import toast from "react-hot-toast";
 
@@ -102,23 +102,10 @@ export default function DiagnosisPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-4 pt-12 pb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <button onClick={() => router.back()} className="p-1"><ArrowLeft size={24} /></button>
-          <h1 className="text-xl font-bold">Treatment Monitoring</h1>
-        </div>
-        <p className="text-sm opacity-80">Track how treatments are working</p>
-        <div className="flex gap-3 mt-3">
-          <div className="bg-white/15 rounded-xl px-4 py-2 flex-1 text-center">
-            <p className="text-2xl font-bold">{sessions.length}</p>
-            <p className="text-xs opacity-80">Active Cases</p>
-          </div>
-          <div className="bg-white/15 rounded-xl px-4 py-2 flex-1 text-center">
-            <p className="text-2xl font-bold text-amber-300">{dueToday.length}</p>
-            <p className="text-xs opacity-80">Due Today</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Treatment Monitoring"
+        action={dueToday.length > 0 ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-600">{dueToday.length} due</span> : undefined}
+      />
 
       <div className="px-4 mt-4 space-y-4">
         {loading ? (

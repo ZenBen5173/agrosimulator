@@ -4,13 +4,14 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   TrendingUp,
   TrendingDown,
   Minus,
   ChevronDown,
   RefreshCw,
+  ArrowLeft,
 } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */

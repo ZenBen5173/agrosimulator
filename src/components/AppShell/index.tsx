@@ -11,6 +11,7 @@ const HIDE_TAB_PATTERNS = [
   "/inspection",
   "/planting",
   "/dev",
+  "/farm/redraw",
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

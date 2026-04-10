@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   Plus,
   Package,
   AlertTriangle,
@@ -12,6 +11,7 @@ import {
   ChevronDown,
   Trash2,
 } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 
 interface InventoryItem {
@@ -89,37 +89,15 @@ export default function InventoryPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 pt-12 pb-6">
-        <div className="flex items-center gap-3 mb-3">
-          <button onClick={() => router.back()} className="p-1"><ArrowLeft size={24} /></button>
-          <h1 className="text-xl font-bold">Inventory</h1>
-          <div className="ml-auto flex gap-2">
-            <button
-              onClick={() => router.push("/inventory/scan")}
-              className="p-2 rounded-full bg-white/20"
-            >
-              <Camera size={18} />
-            </button>
-            <button
-              onClick={() => setShowAdd(!showAdd)}
-              className="p-2 rounded-full bg-white/20"
-            >
-              <Plus size={18} />
-            </button>
+      <PageHeader
+        title="Inventory"
+        action={
+          <div className="flex gap-1">
+            <button onClick={() => router.push("/inventory/scan")} className="p-2 rounded-full hover:bg-gray-100"><Camera size={18} className="text-gray-500" /></button>
+            <button onClick={() => setShowAdd(!showAdd)} className="p-2 rounded-full hover:bg-gray-100"><Plus size={18} className="text-gray-500" /></button>
           </div>
-        </div>
-        <div className="flex gap-3">
-          <div className="bg-white/15 rounded-xl px-4 py-2 flex-1 text-center">
-            <p className="text-2xl font-bold">{items.length}</p>
-            <p className="text-xs opacity-80">Items</p>
-          </div>
-          <div className="bg-white/15 rounded-xl px-4 py-2 flex-1 text-center">
-            <p className="text-2xl font-bold text-amber-300">{lowStock.length}</p>
-            <p className="text-xs opacity-80">Low Stock</p>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       <div className="px-4 mt-4 space-y-3">
         {/* Add form */}

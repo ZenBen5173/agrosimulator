@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   Droplets,
   Leaf,
   Bug,
@@ -14,6 +13,7 @@ import {
   ChevronDown,
   AlertTriangle,
 } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 
 interface PlotNeed {
@@ -74,37 +74,31 @@ export default function PrepListPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 pt-12 pb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <button onClick={() => router.back()} className="p-1">
-            <ArrowLeft size={24} />
-          </button>
-          <h1 className="text-xl font-bold">Today&apos;s Prep List</h1>
-          <button onClick={fetchPrep} className="ml-auto p-2 rounded-full bg-white/20">
-            <RefreshCw size={18} />
-          </button>
-        </div>
-        {data && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white/15 rounded-xl p-3 text-center">
-              <Droplets size={20} className="mx-auto mb-1" />
-              <p className="text-lg font-bold">{data.total_water_litres}L</p>
-              <p className="text-xs opacity-80">Water</p>
-            </div>
-            <div className="bg-white/15 rounded-xl p-3 text-center">
-              <Clock size={20} className="mx-auto mb-1" />
-              <p className="text-lg font-bold">{data.total_labour_minutes}m</p>
-              <p className="text-xs opacity-80">Labour</p>
-            </div>
-            <div className="bg-white/15 rounded-xl p-3 text-center">
-              <DollarSign size={20} className="mx-auto mb-1" />
-              <p className="text-lg font-bold">RM{data.total_estimated_cost_rm.toFixed(2)}</p>
-              <p className="text-xs opacity-80">Cost</p>
-            </div>
+      <PageHeader
+        title="Today's Prep List"
+        action={<button onClick={fetchPrep} className="p-2 rounded-full hover:bg-gray-100"><RefreshCw size={18} className="text-gray-500" /></button>}
+      />
+
+      {/* Summary stats */}
+      {data && (
+        <div className="grid grid-cols-3 gap-2 px-4 pt-3">
+          <div className="rounded-xl bg-blue-50 p-3 text-center">
+            <Droplets size={18} className="mx-auto mb-1 text-blue-500" />
+            <p className="text-base font-bold text-gray-800">{data.total_water_litres}L</p>
+            <p className="text-[10px] text-gray-500">Water</p>
           </div>
-        )}
-      </div>
+          <div className="rounded-xl bg-gray-100 p-3 text-center">
+            <Clock size={18} className="mx-auto mb-1 text-gray-500" />
+            <p className="text-base font-bold text-gray-800">{data.total_labour_minutes}m</p>
+            <p className="text-[10px] text-gray-500">Labour</p>
+          </div>
+          <div className="rounded-xl bg-green-50 p-3 text-center">
+            <DollarSign size={18} className="mx-auto mb-1 text-green-500" />
+            <p className="text-base font-bold text-gray-800">RM{data.total_estimated_cost_rm.toFixed(2)}</p>
+            <p className="text-[10px] text-gray-500">Cost</p>
+          </div>
+        </div>
+      )}
 
       {data && (
         <div className="px-4 mt-4 space-y-3">

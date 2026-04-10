@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   Bell,
   AlertTriangle,
   CloudRain,
@@ -13,6 +12,7 @@ import {
   X,
   ChevronRight,
 } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 
 interface FarmAlert {
@@ -85,20 +85,10 @@ export default function AlertsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-gradient-to-r from-red-600 to-rose-600 text-white px-4 pt-12 pb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <button onClick={() => router.back()} className="p-1"><ArrowLeft size={24} /></button>
-          <h1 className="text-xl font-bold">Farm Alerts</h1>
-          {unread > 0 && (
-            <span className="ml-auto bg-white/20 px-3 py-1 rounded-full text-sm font-medium">
-              {unread} new
-            </span>
-          )}
-        </div>
-        <p className="text-sm opacity-80">
-          Proactive warnings from AI intelligence scanning
-        </p>
-      </div>
+      <PageHeader
+        title="Farm Alerts"
+        action={unread > 0 ? <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-600">{unread} new</span> : undefined}
+      />
 
       <div className="px-4 mt-4 space-y-3">
         {loading ? (
