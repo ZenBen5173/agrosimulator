@@ -9,9 +9,11 @@ import type { ChatMessage } from "@/types/farm";
 
 const QUICK_SUGGESTIONS = [
   "What should I do today?",
-  "When to harvest?",
-  "Crop health tips",
-  "Market advice",
+  "Water my paddy plots",
+  "Schedule inspection for A1",
+  "Do I need more fertilizer?",
+  "Check market prices",
+  "Harvest timing advice",
 ];
 
 export default function ChatPage() {
@@ -115,17 +117,23 @@ export default function ChatPage() {
           throw new Error(errData.error || "Failed to send message");
         }
 
-        const { reply } = await res.json();
+        const { reply, action, used_tools } = await res.json();
 
         const assistantMsg: ChatMessage = {
           id: `temp-assistant-${Date.now()}`,
           farm_id: farm.id,
           role: "assistant",
           content: reply,
+          metadata: { action, used_tools },
           created_at: new Date().toISOString(),
         };
 
         setMessages((prev) => [...prev, assistantMsg]);
+
+        // Show toast for actions taken
+        if (action) {
+          toast.success(`Action: ${action.details}`, { duration: 4000 });
+        }
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to get response";
@@ -222,13 +230,24 @@ export default function ChatPage() {
                   </div>
                 )}
                 <div
-                  className={`max-w-[80%] whitespace-pre-wrap px-4 py-2.5 text-sm leading-relaxed ${
+                  className={`max-w-[80%] px-4 py-2.5 text-sm leading-relaxed ${
                     msg.role === "user"
                       ? "rounded-2xl rounded-br-md bg-green-600 text-white"
                       : "rounded-2xl rounded-bl-md bg-white text-gray-800 shadow-sm"
                   }`}
                 >
-                  {msg.content}
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  {/* Show tool usage badges for assistant messages */}
+                  {msg.role === "assistant" && msg.metadata && Array.isArray((msg.metadata as Record<string, unknown>).used_tools) && (
+                    <div className="mt-2 flex flex-wrap gap-1 border-t border-gray-100 pt-2">
+                      {((msg.metadata as Record<string, unknown>).used_tools as string[]).map((tool: string) => (
+                        <span key={tool} className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-600">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                          {tool}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
