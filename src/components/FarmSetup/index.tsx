@@ -206,7 +206,6 @@ export default function FarmSetup({ editFarmId }: FarmSetupProps = {}) {
       const step = activeStepRef.current;
       const s = useOnboardingStore.getState();
 
-      console.log("[FarmSetup] draw:created fired, step =", step, "layer type =", event.layerType);
 
       try {
         if (step === 0) {
@@ -217,7 +216,6 @@ export default function FarmSetup({ editFarmId }: FarmSetupProps = {}) {
           (layer as any)._parcelId = id;
           drawnItems.addLayer(layer);
           s.addParcel({ id, ...result });
-          console.log("[FarmSetup] Parcel added:", id, result.areaAcres, "acres");
         } else if (step === 1) {
           // Water features
           const type = activeTypeRef.current;
@@ -228,7 +226,6 @@ export default function FarmSetup({ editFarmId }: FarmSetupProps = {}) {
             (layer as any)._featureId = feature.id;
             drawnItems.addLayer(layer);
             s.addWaterFeature(feature);
-            console.log("[FarmSetup] Water feature added:", feature.id, feature.type);
           }
         } else if (step === 2) {
           // Roads
@@ -240,7 +237,6 @@ export default function FarmSetup({ editFarmId }: FarmSetupProps = {}) {
             (layer as any)._featureId = feature.id;
             drawnItems.addLayer(layer);
             s.addRoadFeature(feature);
-            console.log("[FarmSetup] Road feature added:", feature.id, feature.type);
           }
         } else if (step === 4) {
           // Infrastructure — markers
@@ -252,7 +248,6 @@ export default function FarmSetup({ editFarmId }: FarmSetupProps = {}) {
             (layer as any)._featureId = feature.id;
             drawnItems.addLayer(layer);
             s.addInfrastructure(feature);
-            console.log("[FarmSetup] Infra feature added:", feature.id, feature.type);
           }
         }
       } catch (err) {
@@ -432,7 +427,6 @@ export default function FarmSetup({ editFarmId }: FarmSetupProps = {}) {
       // Reset store and navigate forward
       reset();
       const destination = editFarmId ? "/home" : "/onboarding/research";
-      console.log("[FarmSetup] Save complete, navigating to", destination);
       try {
         router.push(destination);
       } catch {
