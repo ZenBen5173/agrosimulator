@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Plus, ChevronDown } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { createClient } from "@/lib/supabase/client";
 import { SkeletonCard, SkeletonLine } from "@/components/ui/Skeleton";
@@ -30,7 +31,6 @@ export default function DashboardPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showAllTxns, setShowAllTxns] = useState(false);
   const [chartsExpanded, setChartsExpanded] = useState(false);
-  const [expandedTxn, setExpandedTxn] = useState<string | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -106,17 +106,17 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-lg border-b border-gray-100 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-base font-semibold text-gray-900">Accounts</h1>
+      <PageHeader
+        title="Accounts Overview"
+        breadcrumbs={[{ label: "Accounts" }]}
+        action={
           <button onClick={() => setSheetOpen(true)} className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
             <Plus size={14} /> Add Record
           </button>
-        </div>
-      </div>
+        }
+      />
 
-      {/* Navigation to business sub-pages */}
+      {/* Sub-navigation */}
       <div className="flex border-b border-gray-200 bg-white px-2 overflow-x-auto no-scrollbar">
         {[
           { label: "Overview", href: "/dashboard", active: true },
@@ -206,57 +206,18 @@ export default function DashboardPage() {
             <>
               {recentRecords.map((r) => {
                 const isIncome = r.record_type === "income";
-                const isExpanded = expandedTxn === r.id;
                 return (
-                  <div key={r.id} className="border-b border-gray-50 last:border-0">
-                    <button
-                      onClick={() => setExpandedTxn(isExpanded ? null : r.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50/50 transition-colors text-left"
-                    >
-                      <span className="text-[10px] text-gray-400 w-12 flex-shrink-0">{formatDate(r.record_date)}</span>
-                      <span className="flex-1 text-xs text-gray-800 truncate">{r.description || r.category}</span>
-                      <span className={`text-xs font-semibold flex-shrink-0 ${isIncome ? "text-green-600" : "text-red-500"}`}>
-                        {isIncome ? "+" : "-"}RM{r.amount.toFixed(2)}
-                      </span>
-                      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.15 }}>
-                        <ChevronDown size={12} className="text-gray-300" />
-                      </motion.div>
-                    </button>
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="border-t border-gray-50 bg-gray-50/30 px-3 pb-2.5 text-xs"
-                        >
-                          <div className="pt-2 space-y-1.5">
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Type</span>
-                              <span className={`font-medium ${isIncome ? "text-green-600" : "text-red-500"}`}>{isIncome ? "Income" : "Expense"}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Category</span>
-                              <span className="text-gray-700">{r.category}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Amount</span>
-                              <span className="text-gray-700 font-medium">RM{r.amount.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Date</span>
-                              <span className="text-gray-700">{new Date(r.record_date + "T12:00:00").toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "long", year: "numeric" })}</span>
-                            </div>
-                            {r.description && (
-                              <div className="pt-1">
-                                <span className="text-gray-400">Description</span>
-                                <p className="text-gray-700 mt-0.5">{r.description}</p>
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                  <div key={r.id} className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-50 last:border-0">
+                    <span className="text-[10px] text-gray-400 w-12 flex-shrink-0">{formatDate(r.record_date)}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs text-gray-800">{r.description || r.category}</span>
+                    </div>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${isIncome ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500"}`}>
+                      {r.category}
+                    </span>
+                    <span className={`text-xs font-semibold flex-shrink-0 w-20 text-right ${isIncome ? "text-green-600" : "text-red-500"}`}>
+                      {isIncome ? "+" : "-"}RM{r.amount.toFixed(2)}
+                    </span>
                   </div>
                 );
               })}
