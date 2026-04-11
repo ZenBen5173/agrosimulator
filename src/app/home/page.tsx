@@ -281,7 +281,7 @@ export default function HomePage() {
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-lg border-b border-gray-100 px-4 py-3">
         <div className="flex items-center justify-between">
           {farms.length > 1 ? <FarmSwitcher /> : (
-            <h1 className="text-base font-semibold text-gray-900">{farm.name || "My Farm"}</h1>
+            <h1 className="text-base font-semibold text-gray-900">Today</h1>
           )}
           <NotificationBell />
         </div>
@@ -583,6 +583,30 @@ export default function HomePage() {
             ))}
           </div>
         )}
+
+        {/* ── Quick Links ── */}
+        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-100">
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Quick Links</span>
+          </div>
+          {[
+            { label: "Scan Document", desc: "Photo a bill or receipt", href: "/accounts/scan" },
+            { label: "Market Prices", desc: "Current crop and supply prices", href: "/market" },
+            { label: "Alerts Feed", desc: "Farm warnings and advisories", href: "/alerts" },
+            { label: "Inventory", desc: "Stock levels and reorder", href: "/inventory" },
+            { label: "Documents", desc: "Sales orders, invoices, POs", href: "/business" },
+            { label: "Activity Log", desc: "Recent farm events", href: "/activity" },
+          ].map((link) => (
+            <button key={link.label} onClick={() => router.push(link.href)}
+              className="w-full flex items-center justify-between px-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 text-left">
+              <div>
+                <p className="text-xs font-medium text-gray-800">{link.label}</p>
+                <p className="text-[10px] text-gray-400">{link.desc}</p>
+              </div>
+              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+            </button>
+          ))}
+        </div>
 
       </div>
     </div>
