@@ -7,7 +7,7 @@ import {
   CalendarCheck,
   Map,
   MessageCircle,
-  Wallet,
+  BookOpen,
   Plus,
 } from "lucide-react";
 import FabMenu from "./FabMenu";
@@ -19,7 +19,7 @@ const LEFT_TABS = [
 
 const RIGHT_TABS = [
   { key: "chat", label: "Chat", icon: MessageCircle, href: "/chat" },
-  { key: "dashboard", label: "Money", icon: Wallet, href: "/dashboard" },
+  { key: "accounts", label: "Accounts", icon: BookOpen, href: "/dashboard" },
 ];
 
 const ALL_TABS = [...LEFT_TABS, ...RIGHT_TABS];

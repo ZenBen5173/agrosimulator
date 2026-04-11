@@ -109,11 +109,32 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-lg border-b border-gray-100 px-4 py-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-semibold text-gray-900">Financial Overview</h1>
+          <h1 className="text-base font-semibold text-gray-900">Accounts</h1>
           <button onClick={() => setSheetOpen(true)} className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
             <Plus size={14} /> Add Record
           </button>
         </div>
+      </div>
+
+      {/* Navigation to business sub-pages */}
+      <div className="flex border-b border-gray-200 bg-white px-2 overflow-x-auto no-scrollbar">
+        {[
+          { label: "Overview", href: "/dashboard", active: true },
+          { label: "Documents", href: "/business" },
+          { label: "Inventory", href: "/inventory" },
+          { label: "Equipment", href: "/equipment" },
+        ].map((link) => (
+          <button
+            key={link.label}
+            onClick={() => !link.active && router.push(link.href)}
+            className={`flex-shrink-0 py-2.5 px-3 text-xs font-medium transition-colors relative ${
+              link.active ? "text-green-600" : "text-gray-400"
+            }`}
+          >
+            {link.label}
+            {link.active && <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-green-600" />}
+          </button>
+        ))}
       </div>
 
       <div className="px-4 pt-3 space-y-3">
