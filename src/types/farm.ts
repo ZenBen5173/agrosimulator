@@ -55,6 +55,8 @@ export interface ChatThread {
   last_message: string | null;
   last_message_at: string;
   is_active: boolean;
+  has_unread: boolean;
+  is_archived: boolean;
   created_at: string;
 }
 

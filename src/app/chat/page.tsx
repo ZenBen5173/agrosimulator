@@ -145,6 +145,17 @@ export default function ChatPage() {
     }
   }, [farm?.id, activeThread, sending, loadThreads]);
 
+  // Select thread + mark as read
+  const handleSelectThread = useCallback(async (thread: ChatThread) => {
+    setActiveThread(thread);
+    // Mark as read
+    if (thread.has_unread) {
+      const supabase = createClient();
+      await supabase.from("chat_threads").update({ has_unread: false }).eq("id", thread.id);
+      setThreads((prev) => prev.map((t) => t.id === thread.id ? { ...t, has_unread: false } as ChatThread : t));
+    }
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); sendMessage(input); };
   const timeAgo = (d: string) => {
     const diff = Date.now() - new Date(d).getTime();
@@ -250,7 +261,7 @@ export default function ChatPage() {
         </button>
       </div>
 
-      <div className="px-4 pt-3">
+      <div className="px-4 pt-3 space-y-3">
         {loadingThreads ? (
           <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-gray-100 rounded-lg animate-pulse" />)}</div>
         ) : threads.length === 0 ? (
@@ -260,31 +271,77 @@ export default function ChatPage() {
               Start your first chat
             </button>
           </div>
-        ) : (
-          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-            {threads.map((thread) => (
-              <button key={thread.id} onClick={() => setActiveThread(thread)}
-                className="w-full flex items-center gap-3 px-3 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 text-left transition-colors">
-                {/* Avatar */}
-                <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-bold text-green-700">{thread.title.charAt(0).toUpperCase()}</span>
-                </div>
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{thread.title}</p>
-                    <span className="text-[10px] text-gray-400 flex-shrink-0 ml-2">{timeAgo(thread.last_message_at)}</span>
+        ) : (() => {
+          const unread = threads.filter((t) => t.has_unread);
+          const active = threads.filter((t) => !t.has_unread && !t.is_archived);
+          const archived = threads.filter((t) => t.is_archived);
+
+          return (
+            <>
+              {/* Unread section */}
+              {unread.length > 0 && (
+                <>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Unread</p>
+                  <div className="rounded-lg border border-green-200 bg-green-50/30 overflow-hidden">
+                    {unread.map((thread) => (
+                      <ThreadRow key={thread.id} thread={thread} onSelect={handleSelectThread} timeAgo={timeAgo} unread />
+                    ))}
                   </div>
-                  {thread.last_message && (
-                    <p className="text-[11px] text-gray-400 truncate mt-0.5">{thread.last_message}</p>
-                  )}
-                </div>
-                <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-              </button>
-            ))}
-          </div>
-        )}
+                </>
+              )}
+
+              {/* Recent section */}
+              {active.length > 0 && (
+                <>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{unread.length > 0 ? "Recent" : "Conversations"}</p>
+                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                    {active.map((thread) => (
+                      <ThreadRow key={thread.id} thread={thread} onSelect={handleSelectThread} timeAgo={timeAgo} />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Archived section */}
+              {archived.length > 0 && (
+                <>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Archived</p>
+                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                    {archived.map((thread) => (
+                      <ThreadRow key={thread.id} thread={thread} onSelect={handleSelectThread} timeAgo={timeAgo} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          );
+        })()}
       </div>
     </div>
+  );
+}
+
+// ── Thread Row Component ──
+function ThreadRow({ thread, onSelect, timeAgo, unread }: { thread: ChatThread; onSelect: (t: ChatThread) => void; timeAgo: (d: string) => string; unread?: boolean }) {
+  return (
+    <button onClick={() => onSelect(thread)}
+      className="w-full flex items-center gap-3 px-3 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 text-left transition-colors">
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${unread ? "bg-green-200" : "bg-green-100"}`}>
+        <span className={`text-xs font-bold ${unread ? "text-green-800" : "text-green-700"}`}>{thread.title.charAt(0).toUpperCase()}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between">
+          <p className={`text-xs truncate ${unread ? "font-bold text-gray-900" : "font-semibold text-gray-800"}`}>{thread.title}</p>
+          <span className="text-[10px] text-gray-400 flex-shrink-0 ml-2">{timeAgo(thread.last_message_at)}</span>
+        </div>
+        {thread.last_message && (
+          <p className={`text-[11px] truncate mt-0.5 ${unread ? "text-gray-600 font-medium" : "text-gray-400"}`}>{thread.last_message}</p>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {unread && <span className="w-2 h-2 rounded-full bg-green-500" />}
+        <ChevronRight size={14} className="text-gray-300" />
+      </div>
+    </button>
   );
 }
