@@ -188,7 +188,7 @@ export async function POST(request: Request) {
           break;
         }
 
-        case "create_rfq": {
+        case "create_rq": {
           if (action.items && action.items.length > 0) {
             // Find or create supplier
             let supplierId: string | null = null;
@@ -197,7 +197,7 @@ export async function POST(request: Request) {
               supplierId = existing?.id || null;
             }
 
-            const rfqNumber = await getNextDocNumber(farm_id, "RFQ", "purchase_rfqs");
+            const rfqNumber = await getNextDocNumber(farm_id, "RQ", "purchase_rfqs");
             const totalRm = action.items.reduce((s, i) => s + i.quantity * i.unit_price_rm, 0);
 
             const { data: rfq } = await supabase.from("purchase_rfqs").insert({
@@ -219,21 +219,21 @@ export async function POST(request: Request) {
               })));
 
               actionResult = {
-                type: "create_rfq",
-                details: `RFQ drafted: ${rfqNumber} (RM${totalRm.toFixed(2)}) — [View RFQ](/business/rfq/${rfq.id})`,
+                type: "create_rq",
+                details: `RQ drafted: ${rfqNumber} (RM${totalRm.toFixed(2)}) — [View RQ](/business/rfq/${rfq.id})`,
               };
 
-              // Store rfq_id in metadata so next "ok" can reference it
-              result.action!.rfq_id = rfq.id;
+              // Store rq_id in metadata so next "ok" can reference it
+              result.action!.rq_id = rfq.id;
             }
           }
           break;
         }
 
         case "confirm_purchase": {
-          const rfqId = action.rfq_id;
+          const rfqId = action.rq_id;
           if (!rfqId) {
-            // Try to find the last RFQ from chat metadata
+            // Try to find the last RQ from chat metadata
             const { data: lastMsg } = await supabase.from("chat_messages")
               .select("metadata")
               .eq("farm_id", farm_id)
@@ -243,25 +243,25 @@ export async function POST(request: Request) {
 
             const foundRfqId = lastMsg?.find((m) => {
               const meta = m.metadata as Record<string, unknown> | null;
-              return meta?.action && (meta.action as Record<string, unknown>).rfq_id;
+              return meta?.action && (meta.action as Record<string, unknown>).rq_id;
             });
-            const resolvedRfqId = foundRfqId ? ((foundRfqId.metadata as Record<string, unknown>).action as Record<string, unknown>).rfq_id as string : null;
+            const resolvedRfqId = foundRfqId ? ((foundRfqId.metadata as Record<string, unknown>).action as Record<string, unknown>).rq_id as string : null;
 
             if (resolvedRfqId) {
-              action.rfq_id = resolvedRfqId;
+              action.rq_id = resolvedRfqId;
             }
           }
 
-          if (action.rfq_id) {
-            // Get RFQ details
-            const { data: rfq } = await supabase.from("purchase_rfqs").select("*, suppliers(name)").eq("id", action.rfq_id).single();
+          if (action.rq_id) {
+            // Get RQ details
+            const { data: rfq } = await supabase.from("purchase_rfqs").select("*, suppliers(name)").eq("id", action.rq_id).single();
             if (rfq) {
-              // Create PO from RFQ
+              // Create PO from RQ
               const origin = new URL(request.url).origin;
               const poRes = await fetch(`${origin}/api/purchase/orders`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
-                body: JSON.stringify({ farm_id, supplier_id: rfq.supplier_id, rfq_id: rfq.id }),
+                body: JSON.stringify({ farm_id, supplier_id: rfq.supplier_id, rq_id: rfq.id }),
               });
 
               if (poRes.ok) {
@@ -301,7 +301,7 @@ export async function POST(request: Request) {
           } else {
             actionResult = {
               type: "confirm_purchase",
-              details: "No pending RFQ found. Please request a restock first.",
+              details: "No pending RQ found. Please request a restock first.",
             };
           }
           break;

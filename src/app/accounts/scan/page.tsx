@@ -219,7 +219,7 @@ export default function AccountsScanPage() {
               <p className="text-xs text-gray-600">
                 {scanResult.direction === "purchase"
                   ? scanResult.document_type === "supplier_quotation"
-                    ? "Request for Quotation (RFQ)"
+                    ? "Request Quotation (RQ)"
                     : "Purchase Order + Goods Received Note + Purchase Invoice + Financial Record + Inventory Update"
                   : "Sales Order + Delivery Order + Invoice + Financial Record + Inventory Update"
                 }
@@ -267,7 +267,7 @@ export default function AccountsScanPage() {
 
             <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               {processResult.created.map((doc) => (
-                <button key={doc.id} onClick={() => router.push(`/business/${doc.type === "Bill" ? "purchase_invoice" : doc.type === "PO" ? "purchase_order" : doc.type === "GRN" ? "grn" : doc.type === "RFQ" ? "rfq" : doc.type === "SO" ? "sales_order" : doc.type === "DO" ? "delivery_order" : doc.type === "INV" ? "sales_invoice" : doc.type.toLowerCase()}/${doc.id}`)}
+                <button key={doc.id} onClick={() => router.push(`/business/${doc.type === "Bill" ? "purchase_invoice" : doc.type === "PO" ? "purchase_order" : doc.type === "GRN" ? "grn" : doc.type === "RQ" ? "rfq" : doc.type === "SO" ? "sales_order" : doc.type === "DO" ? "delivery_order" : doc.type === "INV" ? "sales_invoice" : doc.type.toLowerCase()}/${doc.id}`)}
                   className="w-full flex items-center justify-between px-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 text-left">
                   <div className="flex items-center gap-2">
                     <FileText size={14} className="text-gray-400" />

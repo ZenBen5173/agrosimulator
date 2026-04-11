@@ -14,7 +14,7 @@ const ActionSchema = z.object({
     "create_inspection",
     "schedule_watering",
     "reorder_item",
-    "create_rfq",
+    "create_rq",
     "confirm_purchase",
     "create_alert",
     "none",
@@ -29,7 +29,7 @@ const ActionSchema = z.object({
   unit: z.string().nullable().optional(),
   unit_price_rm: z.number().nullable().optional(),
   supplier_name: z.string().nullable().optional(),
-  rfq_id: z.string().nullable().optional(),
+  rq_id: z.string().nullable().optional(),
   items: z.array(z.object({
     item_name: z.string(),
     item_type: z.string(),
@@ -94,20 +94,20 @@ Available actions:
 - create_inspection: Schedule an inspection for a specific plot
 - schedule_watering: Create a watering task with specific quantities
 - reorder_item: Flag an inventory item for reordering
-- create_rfq: Create a Request for Quotation to purchase supplies. Use when farmer says "restock", "buy", "order", "need more". Look up current stock from inventory, find the last supplier, estimate quantity needed (2-4 weeks supply), and use last purchase price. Include items array with details.
-- confirm_purchase: Convert an RFQ to Purchase Order + GRN + Bill. Use when farmer says "ok", "confirm", "yes", "go ahead" AFTER a create_rfq action was just taken. Include the rfq_id from the previous action.
+- create_rq: Create a Request Quotation to purchase supplies. Use when farmer says "restock", "buy", "order", "need more". Look up current stock from inventory, find the last supplier, estimate quantity needed (2-4 weeks supply), and use last purchase price. Include items array with details.
+- confirm_purchase: Convert an RFQ to Purchase Order + GRN + Bill. Use when farmer says "ok", "confirm", "yes", "go ahead" AFTER a create_rq action was just taken. Include the rq_id from the previous action.
 - create_alert: Create a farm alert
 - none: No action needed (just information/advice)
 
 PURCHASE FLOW:
-1. Farmer: "I need more Baja Hijau" → You: check inventory (currently 4.5kg, uses ~1.2kg/week), recommend 15kg restock from Kedai Ah Kow at RM3/kg. action: create_rfq with items.
-2. Farmer: "ok" or "confirm" → You: convert RFQ to PO+GRN+Bill, inventory updated. action: confirm_purchase with rfq_id.
+1. Farmer: "I need more Baja Hijau" → You: check inventory (currently 4.5kg, uses ~1.2kg/week), recommend 15kg restock from Kedai Ah Kow at RM3/kg. action: create_rq with items.
+2. Farmer: "ok" or "confirm" → You: convert RFQ to PO+GRN+Bill, inventory updated. action: confirm_purchase with rq_id.
 
 ALWAYS respond with JSON:
 {
   "reply": "Your conversational reply (2-3 short paragraphs max, simple English)",
   "action": {
-    "action_type": "create_task|create_inspection|schedule_watering|reorder_item|create_rfq|confirm_purchase|create_alert|none",
+    "action_type": "create_task|create_inspection|schedule_watering|reorder_item|create_rq|confirm_purchase|create_alert|none",
     "task_title": "string or null",
     "task_description": "string or null",
     "task_type": "inspection|watering|fertilizing|treatment|harvesting|replanting|farm_wide or null",
@@ -118,7 +118,7 @@ ALWAYS respond with JSON:
     "unit": "string or null",
     "unit_price_rm": number or null,
     "supplier_name": "string or null",
-    "rfq_id": "string or null (for confirm_purchase, use the ID from previous create_rfq)",
+    "rq_id": "string or null (for confirm_purchase, use the ID from previous create_rq)",
     "items": [{"item_name": "string", "item_type": "fertilizer|pesticide|seed|other", "quantity": number, "unit": "string", "unit_price_rm": number}] or null
   },
   "used_tools": ["getWeather", "getPlots"] (list which tools you used)
@@ -127,9 +127,9 @@ ALWAYS respond with JSON:
 Examples:
 - "Water my paddy" → action: schedule_watering with calculated quantity
 - "Is plot A1 okay?" → action: create_inspection for A1
-- "I need more fertilizer" → action: create_rfq (check inventory, find supplier, draft RFQ with items)
-- "Restock Baja Hijau" → action: create_rfq (specific item, check stock level, recommend quantity)
-- "ok" / "confirm" / "yes go ahead" (after RFQ was created) → action: confirm_purchase
+- "I need more fertilizer" → action: create_rq (check inventory, find supplier, draft RQ with items)
+- "Restock Baja Hijau" → action: create_rq (specific item, check stock level, recommend quantity)
+- "ok" / "confirm" / "yes go ahead" (after RQ was created) → action: confirm_purchase
 - "What's the weather?" → action: none (just information)
 - "Remind me to harvest tomorrow" → action: create_task`;
 

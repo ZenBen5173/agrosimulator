@@ -20,19 +20,19 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { farm_id, supplier_id, rfq_id, items, status } = await request.json();
+  const { farm_id, supplier_id, rq_id, items, status } = await request.json();
   if (!farm_id) return NextResponse.json({ error: "farm_id required" }, { status: 400 });
 
   const poNumber = await getNextDocNumber(farm_id, "PO", "purchase_orders");
   const { data: po, error } = await supabase.from("purchase_orders").insert({
-    farm_id, supplier_id, rfq_id: rfq_id || null, po_number: poNumber, status: status || "confirmed",
+    farm_id, supplier_id, rq_id: rq_id || null, po_number: poNumber, status: status || "confirmed",
   }).select().single();
   if (error || !po) return NextResponse.json({ error: error?.message || "Failed" }, { status: 500 });
 
   let total = 0;
-  if (rfq_id) {
-    total = await transferItems(rfq_id, "rfq", po.id, "purchase_order");
-    await supabase.from("purchase_rfqs").update({ status: "converted" }).eq("id", rfq_id);
+  if (rq_id) {
+    total = await transferItems(rq_id, "rfq", po.id, "purchase_order");
+    await supabase.from("purchase_rfqs").update({ status: "converted" }).eq("id", rq_id);
   } else if (items?.length) {
     total = await insertDocumentItems(po.id, "purchase_order", items);
   }

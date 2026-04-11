@@ -69,7 +69,7 @@ export default function DocumentPreview() {
         { f: "quotation_id", t: "sales_quotations", n: "qt_number", l: "Quotation" },
         { f: "so_id", t: "sales_orders", n: "so_number", l: "Sales Order" },
         { f: "do_id", t: "delivery_orders", n: "do_number", l: "Delivery Order" },
-        { f: "rfq_id", t: "purchase_rfqs", n: "rfq_number", l: "RFQ" },
+        { f: "rq_id", t: "purchase_rfqs", n: "rfq_number", l: "RQ" },
         { f: "po_id", t: "purchase_orders", n: "po_number", l: "Purchase Order" },
         { f: "grn_id", t: "goods_received_notes", n: "grn_number", l: "GRN" },
       ];

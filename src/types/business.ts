@@ -35,7 +35,7 @@ export interface DocumentItem {
 }
 
 // ── Purchase Side ──
-export interface PurchaseRFQ {
+export interface PurchaseRQ {
   id: string;
   farm_id: string;
   supplier_id: string | null;
@@ -53,7 +53,7 @@ export interface PurchaseOrder {
   id: string;
   farm_id: string;
   supplier_id: string | null;
-  rfq_id: string | null;
+  rq_id: string | null;
   po_number: string;
   po_date: string;
   status: "draft" | "confirmed" | "partial" | "received" | "cancelled";

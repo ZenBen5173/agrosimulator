@@ -53,7 +53,7 @@ export default function BusinessPage() {
 
       // Normalize purchase docs
       const pDocs: DocRow[] = [
-        ...rfqs.map((d: Record<string, unknown>) => ({ id: d.id as string, number: d.rfq_number as string, date: d.rfq_date as string, status: d.status as string, total_rm: d.total_rm as number, contact: (d.suppliers as Record<string, string>)?.name || "—", type: "RFQ" })),
+        ...rfqs.map((d: Record<string, unknown>) => ({ id: d.id as string, number: d.rfq_number as string, date: d.rfq_date as string, status: d.status as string, total_rm: d.total_rm as number, contact: (d.suppliers as Record<string, string>)?.name || "—", type: "RQ" })),
         ...pos.map((d: Record<string, unknown>) => ({ id: d.id as string, number: d.po_number as string, date: d.po_date as string, status: d.status as string, total_rm: d.total_rm as number, contact: (d.suppliers as Record<string, string>)?.name || "—", type: "PO" })),
         ...pInvs.map((d: Record<string, unknown>) => ({ id: d.id as string, number: d.bill_number as string, date: d.bill_date as string, status: d.status as string, total_rm: d.total_rm as number, contact: (d.suppliers as Record<string, string>)?.name || "—", type: "Bill" })),
       ].sort((a, b) => b.date.localeCompare(a.date));

@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const { farm_id, supplier_id, items, notes, status } = await request.json();
   if (!farm_id || !items?.length) return NextResponse.json({ error: "farm_id, items required" }, { status: 400 });
 
-  const rfqNumber = await getNextDocNumber(farm_id, "RFQ", "purchase_rfqs");
+  const rfqNumber = await getNextDocNumber(farm_id, "RQ", "purchase_rfqs");
   const { data: rfq, error } = await supabase.from("purchase_rfqs").insert({
     farm_id, supplier_id: supplier_id || null, rfq_number: rfqNumber, status: status || "draft", notes,
   }).select().single();

@@ -42,7 +42,7 @@ interface TxnDetail {
 
 const DOC_TITLES: Record<string, string> = {
   quotation: "Quotation", sales_order: "Sales Order", delivery_order: "Delivery Order",
-  sales_invoice: "Invoice", rfq: "Request for Quotation", purchase_order: "Purchase Order",
+  sales_invoice: "Invoice", rfq: "Request Quotation", purchase_order: "Purchase Order",
   grn: "Goods Received Note", purchase_invoice: "Purchase Invoice",
 };
 
@@ -95,7 +95,7 @@ export default function TransactionDetailPage() {
         { field: "quotation_id", table: "sales_quotations", numField: "qt_number", label: "Quotation", type: "quotation" },
         { field: "so_id", table: "sales_orders", numField: "so_number", label: "Sales Order", type: "sales_order" },
         { field: "do_id", table: "delivery_orders", numField: "do_number", label: "Delivery Order", type: "delivery_order" },
-        { field: "rfq_id", table: "purchase_rfqs", numField: "rfq_number", label: "RFQ", type: "rfq" },
+        { field: "rq_id", table: "purchase_rfqs", numField: "rfq_number", label: "RQ", type: "rfq" },
         { field: "po_id", table: "purchase_orders", numField: "po_number", label: "Purchase Order", type: "purchase_order" },
         { field: "grn_id", table: "goods_received_notes", numField: "grn_number", label: "GRN", type: "grn" },
       ];

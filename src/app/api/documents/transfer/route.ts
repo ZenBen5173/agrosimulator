@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 /**
  * Transfer a document to the next step in the chain.
  * QT→SO, SO→DO, DO→INV (sales)
- * RFQ→PO, PO→GRN, GRN→BILL (purchase)
+ * RQ→PO, PO→GRN, GRN→BILL (purchase)
  */
 export async function POST(request: Request) {
   const { farm_id, from_type, from_id } = await request.json();
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     quotation: { url: "/api/sales/orders", body: { farm_id, quotation_id: from_id } },
     sales_order: { url: "/api/sales/delivery", body: { farm_id, so_id: from_id } },
     delivery_order: { url: "/api/sales/invoices", body: { farm_id, do_id: from_id } },
-    rfq: { url: "/api/purchase/orders", body: { farm_id, rfq_id: from_id } },
+    rfq: { url: "/api/purchase/orders", body: { farm_id, rq_id: from_id } },
     purchase_order: { url: "/api/purchase/grn", body: { farm_id, po_id: from_id } },
     grn: { url: "/api/purchase/invoices", body: { farm_id, grn_id: from_id } },
   };

@@ -50,13 +50,13 @@ export async function POST(request: Request) {
     if (direction === "purchase") {
       // Purchase flow: create PO → GRN → Bill depending on doc type
       if (document_type === "supplier_quotation") {
-        const num = await getNextDocNumber(farm_id, "RFQ", "purchase_rfqs");
+        const num = await getNextDocNumber(farm_id, "RQ", "purchase_rfqs");
         const { data: rfq } = await supabase.from("purchase_rfqs").insert({
           farm_id, supplier_id: contactId, rfq_number: num, rfq_date: docDate, status: "quoted", notes, total_rm: total_amount_rm,
         }).select().single();
         if (rfq) {
           await insertDocumentItems(rfq.id, "rfq", items);
-          created.push({ type: "RFQ", number: num, id: rfq.id });
+          created.push({ type: "RQ", number: num, id: rfq.id });
         }
       } else if (document_type === "purchase_order") {
         const num = await getNextDocNumber(farm_id, "PO", "purchase_orders");
