@@ -1,3 +1,4 @@
+import { rateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { chatActionFlow } from "@/flows/chatAction";
@@ -5,6 +6,8 @@ import { sendPushToUser } from "@/lib/pushNotify";
 import { getNextDocNumber, insertDocumentItems, updateInventoryStock } from "@/lib/business";
 
 export async function POST(request: Request) {
+    const limited = rateLimit(request, "chat"); if (limited) return limited;
+
   try {
     const { farm_id, message, thread_id } = await request.json();
 

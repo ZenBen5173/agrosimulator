@@ -1,8 +1,11 @@
+import { rateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateTasks } from "@/services/ai/taskGenerator";
 
 export async function POST(request: Request) {
+    const limited = rateLimit(request, "ai"); if (limited) return limited;
+
   try {
     const { farm_id } = await request.json();
 

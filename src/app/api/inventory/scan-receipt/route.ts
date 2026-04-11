@@ -1,3 +1,4 @@
+import { rateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ai, DEFAULT_MODEL } from "@/lib/genkit";
@@ -26,6 +27,8 @@ const ReceiptOutputSchema = z.object({
  * Returns extracted data for farmer confirmation.
  */
 export async function POST(request: Request) {
+    const limited = rateLimit(request, "scan"); if (limited) return limited;
+
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();

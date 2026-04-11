@@ -1,9 +1,12 @@
+import { rateLimit } from "@/lib/rate-limit";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 // DEV ONLY — generates a magic link that bypasses email delivery
 // Remove this route before production deployment
 export async function POST(request: Request) {
+    const limited = rateLimit(request, "auth"); if (limited) return limited;
+
   // Allow dev login if SUPABASE_SERVICE_ROLE_KEY is set (needed for demo/hackathon)
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Not available" }, { status: 403 });

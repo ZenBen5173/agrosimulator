@@ -1,8 +1,11 @@
+import { rateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { analysePhotos } from "@/services/ai/diseaseDetection";
 
 export async function POST(request: Request) {
+    const limited = rateLimit(request, "ai"); if (limited) return limited;
+
   try {
     const { farm_id, plot_id, photo_base64s, crop_name, plot_label } =
       await request.json();
