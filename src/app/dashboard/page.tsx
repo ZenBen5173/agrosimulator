@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Plus, ChevronDown } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { createClient } from "@/lib/supabase/client";
@@ -207,7 +207,7 @@ export default function DashboardPage() {
               {recentRecords.map((r) => {
                 const isIncome = r.record_type === "income";
                 return (
-                  <div key={r.id} className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-50 last:border-0">
+                  <button key={r.id} onClick={() => router.push(`/dashboard/${r.id}`)} className="w-full flex items-center gap-2 px-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors text-left">
                     <span className="text-[10px] text-gray-400 w-12 flex-shrink-0">{formatDate(r.record_date)}</span>
                     <div className="flex-1 min-w-0">
                       <span className="text-xs text-gray-800">{r.description || r.category}</span>
@@ -215,10 +215,11 @@ export default function DashboardPage() {
                     <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${isIncome ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500"}`}>
                       {r.category}
                     </span>
-                    <span className={`text-xs font-semibold flex-shrink-0 w-20 text-right ${isIncome ? "text-green-600" : "text-red-500"}`}>
+                    <span className={`text-xs font-semibold flex-shrink-0 w-16 text-right ${isIncome ? "text-green-600" : "text-red-500"}`}>
                       {isIncome ? "+" : "-"}RM{r.amount.toFixed(2)}
                     </span>
-                  </div>
+                    <ChevronRight size={12} className="text-gray-300 flex-shrink-0" />
+                  </button>
                 );
               })}
               {records.length > 8 && (
