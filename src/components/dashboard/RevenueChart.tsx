@@ -2,14 +2,13 @@
 
 import { useMemo } from "react";
 import {
-  AreaChart,
-  Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 import type { FinancialRecord } from "@/types/farm";
 
@@ -21,6 +20,7 @@ interface MonthlyData {
   month: string;
   income: number;
   expenses: number;
+  net: number;
 }
 
 export default function RevenueChart({ records }: RevenueChartProps) {
@@ -30,111 +30,73 @@ export default function RevenueChart({ records }: RevenueChartProps) {
     const map: Record<string, { income: number; expenses: number }> = {};
 
     for (const r of records) {
-      // Extract YYYY-MM from record_date
       const monthKey = r.record_date.slice(0, 7);
-      if (!map[monthKey]) {
-        map[monthKey] = { income: 0, expenses: 0 };
-      }
-      if (r.record_type === "income") {
-        map[monthKey].income += r.amount;
-      } else {
-        map[monthKey].expenses += r.amount;
-      }
+      if (!map[monthKey]) map[monthKey] = { income: 0, expenses: 0 };
+      if (r.record_type === "income") map[monthKey].income += r.amount;
+      else map[monthKey].expenses += r.amount;
     }
 
-    // Sort by month ascending
-    const sorted = Object.entries(map)
+    return Object.entries(map)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([monthKey, data]): MonthlyData => {
         const [year, month] = monthKey.split("-");
         const date = new Date(parseInt(year), parseInt(month) - 1);
-        const label = date.toLocaleDateString("en", {
-          month: "short",
-          year: "2-digit",
-        });
+        const label = date.toLocaleDateString("en", { month: "short" });
         return {
           month: label,
-          income: Math.round(data.income * 100) / 100,
-          expenses: Math.round(data.expenses * 100) / 100,
+          income: Math.round(data.income),
+          expenses: Math.round(data.expenses),
+          net: Math.round(data.income - data.expenses),
         };
       });
-
-    return sorted;
   }, [records]);
 
   if (monthlyData.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50">
-        <p className="text-sm text-gray-400">
-          No records yet. Add your first transaction!
-        </p>
+      <div className="flex h-32 items-center justify-center text-xs text-gray-400">
+        No records yet
       </div>
     );
   }
 
   return (
-    <div className="h-64 w-full">
+    <div className="h-48 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
+        <BarChart
           data={monthlyData}
-          margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+          margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
+          barGap={2}
+          barCategoryGap="25%"
         >
-          <defs>
-            <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-            </linearGradient>
-            <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
           <XAxis
             dataKey="month"
-            tick={{ fontSize: 11, fill: "#9ca3af" }}
+            tick={{ fontSize: 10, fill: "#9ca3af" }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
-            tick={{ fontSize: 11, fill: "#9ca3af" }}
+            tick={{ fontSize: 10, fill: "#9ca3af" }}
             axisLine={false}
             tickLine={false}
-            tickFormatter={(v: number) => `${v}`}
+            tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
           />
           <Tooltip
             contentStyle={{
-              borderRadius: 12,
+              borderRadius: 8,
               border: "1px solid #e5e7eb",
-              fontSize: 12,
-              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+              fontSize: 11,
+              padding: "6px 10px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
             }}
             formatter={(value: unknown, name: unknown) => [
-              `RM ${Number(value).toFixed(2)}`,
+              `RM${Number(value).toFixed(0)}`,
               String(name) === "income" ? "Income" : "Expenses",
             ]}
           />
-          <Legend
-            wrapperStyle={{ fontSize: 12 }}
-            formatter={(value: string) =>
-              value === "income" ? "Income" : "Expenses"
-            }
-          />
-          <Area
-            type="monotone"
-            dataKey="income"
-            stroke="#22c55e"
-            strokeWidth={2}
-            fill="url(#incomeGrad)"
-          />
-          <Area
-            type="monotone"
-            dataKey="expenses"
-            stroke="#ef4444"
-            strokeWidth={2}
-            fill="url(#expenseGrad)"
-          />
-        </AreaChart>
+          <Bar dataKey="income" fill="#22c55e" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="expenses" fill="#ef4444" radius={[3, 3, 0, 0]} />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
