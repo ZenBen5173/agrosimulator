@@ -1,11 +1,11 @@
-# AgroSimulator
+# AgroSim
 
 > AI-powered digital twin for Malaysian smallholder farmers
 > Built for Project 2030: MyAI Future Hackathon — Track 1: Padi & Plates (Agrotech & Food Security)
 
 ## What It Does
 
-AgroSimulator transforms how Malaysian smallholder farmers manage their land by providing an AI-powered digital twin of their farm. Farmers draw their actual farm boundaries on a satellite map, and the system uses AI to research their soil, plan crop layouts, detect diseases through photos, manage inventory, track equipment, and generate daily weather-aware resource plans. It gives every farmer — regardless of farm size — access to precision agriculture tools previously reserved for large commercial operations.
+AgroSim transforms how Malaysian smallholder farmers manage their land by providing an AI-powered digital twin of their farm. Farmers draw their actual farm boundaries on a satellite map, and the system uses AI to research their soil, plan crop layouts, detect diseases through photos, manage inventory, track equipment, and generate daily weather-aware resource plans. It gives every farmer — regardless of farm size — access to precision agriculture tools previously reserved for large commercial operations.
 
 ## Key Features
 

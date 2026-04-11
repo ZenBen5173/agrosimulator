@@ -45,7 +45,7 @@ export default function WelcomePage() {
       <div className="w-full max-w-sm space-y-8 text-center">
         {/* Logo */}
         <div>
-          <h1 className="text-4xl font-bold text-green-800">AgroSimulator</h1>
+          <h1 className="text-4xl font-bold text-green-800">AgroSim</h1>
           <p className="mt-3 text-lg text-green-700">
             Your AI farm advisor, built for Malaysian farmers
           </p>

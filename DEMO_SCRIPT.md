@@ -1,8 +1,8 @@
-# AgroSimulator — 3-Minute Demo Script
+# AgroSim — 3-Minute Demo Script
 
 ## Opening (0:00–0:20)
 
-"Every year, Malaysian smallholder farmers lose millions to crop diseases they could have caught earlier. AgroSimulator gives every farmer — no matter how small their land — a world-class AI advisor in their pocket."
+"Every year, Malaysian smallholder farmers lose millions to crop diseases they could have caught earlier. AgroSim gives every farmer — no matter how small their land — a world-class AI advisor in their pocket."
 
 ## Setup (0:20–0:40)
 
@@ -45,7 +45,7 @@ Quick flash: tap a harvested plot → "Plan next crop" → show the AI recommend
 
 ## Close (2:45–3:00)
 
-"AgroSimulator isn't just an app. It's a step toward Malaysian technological sovereignty — where our farmers are empowered by AI built for them, in their context, for their crops. This is AI that speaks Bahasa Paddy."
+"AgroSim isn't just an app. It's a step toward Malaysian technological sovereignty — where our farmers are empowered by AI built for them, in their context, for their crops. This is AI that speaks Bahasa Paddy."
 
 ---
 

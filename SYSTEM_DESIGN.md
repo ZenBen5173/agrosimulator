@@ -1,4 +1,4 @@
-# AgroSimulator - System Design Documentation
+# AgroSim - System Design Documentation
 
 > **Version:** 1.0 | **Date:** April 10, 2026 | **Platform:** Web (PWA) | **Target:** Malaysian Agrotech Hackathon
 
@@ -26,7 +26,7 @@
 
 ## 1. Architecture Overview
 
-AgroSimulator is a **mobile-first PWA** built with Next.js App Router that helps Malaysian smallholder farmers manage their farms through AI-powered recommendations, disease detection, weather-aware task generation, and market price tracking.
+AgroSim is a **mobile-first PWA** built with Next.js App Router that helps Malaysian smallholder farmers manage their farms through AI-powered recommendations, disease detection, weather-aware task generation, and market price tracking.
 
 ```
                     +---------------------------+
@@ -840,4 +840,4 @@ public/
 
 ---
 
-*This document serves as the complete technical reference for AgroSimulator. Use it to onboard new contributors, plan features, and discuss architectural decisions.*
+*This document serves as the complete technical reference for AgroSim. Use it to onboard new contributors, plan features, and discuss architectural decisions.*

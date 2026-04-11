@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgroSimulator",
+  title: "AgroSim",
   description: "AI-powered farm advisor for Malaysian smallholder farmers",
   manifest: "/manifest.json",
   themeColor: "#16a34a",
