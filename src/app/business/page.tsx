@@ -78,11 +78,15 @@ export default function BusinessPage() {
 
   // AI Summary
   const summaryParts: string[] = [];
-  if (totalReceivable > 0) summaryParts.push(`RM${totalReceivable.toFixed(2)} outstanding from customers`);
-  if (totalPayable > 0) summaryParts.push(`RM${totalPayable.toFixed(2)} owed to suppliers`);
-  if (salesDocs.length === 0 && purchaseDocs.length === 0) summaryParts.push("No business documents yet");
-  const overdueInv = salesDocs.filter((d) => d.type === "INV" && d.status === "unpaid");
-  if (overdueInv.length > 0) summaryParts.push(`${overdueInv.length} unpaid invoice${overdueInv.length > 1 ? "s" : ""}`);
+  if (salesDocs.length === 0 && purchaseDocs.length === 0) {
+    summaryParts.push("No business documents yet");
+  } else {
+    if (totalReceivable > 0) summaryParts.push(`RM${totalReceivable.toFixed(2)} outstanding from customers`);
+    if (totalPayable > 0) summaryParts.push(`RM${totalPayable.toFixed(2)} owed to suppliers`);
+    if (totalReceivable === 0 && totalPayable === 0) summaryParts.push("All accounts settled");
+    const overdueInv = salesDocs.filter((d) => d.type === "INV" && d.status === "unpaid");
+    if (overdueInv.length > 0) summaryParts.push(`${overdueInv.length} unpaid invoice${overdueInv.length > 1 ? "s" : ""} — follow up with customers`);
+  }
 
   // Chart data
   const CHART_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];

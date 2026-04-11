@@ -76,7 +76,7 @@ export default function InventoryPage() {
 
   // AI Summary
   const summaryParts: string[] = [];
-  summaryParts.push(`${items.length} items tracked, est. value RM${totalValue.toFixed(2)}`);
+  summaryParts.push(`${items.length} items tracked${totalValue > 1 ? `, est. value RM${totalValue.toFixed(2)}` : ""}`);
   if (lowStock.length > 0) summaryParts.push(`${lowStock.length} below reorder threshold (${lowStock.map((i) => i.item_name.split(" (")[0]).join(", ")})`);
   else summaryParts.push("all stock levels healthy");
 

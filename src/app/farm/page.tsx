@@ -112,7 +112,7 @@ export default function FarmTabPage() {
   if (atRisk.length > 0) summaryParts.push(`${atRisk.length} plot${atRisk.length > 1 ? "s" : ""} need attention (${atRisk.map((p) => p.label).join(", ")})`);
   else summaryParts.push(`All ${plots.length} plots healthy`);
   const dominantStage = Object.entries(byStage).sort((a, b) => b[1] - a[1])[0];
-  if (dominantStage) summaryParts.push(`mostly ${dominantStage[0]} stage`);
+  if (dominantStage) summaryParts.push(`Mostly ${dominantStage[0]} stage`);
   const harvestReady = plots.filter((p) => p.growth_stage === "harvest_ready");
   if (harvestReady.length > 0) summaryParts.push(`${harvestReady.length} ready to harvest`);
 

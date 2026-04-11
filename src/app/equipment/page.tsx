@@ -73,7 +73,7 @@ export default function EquipmentPage() {
 
   // AI Summary
   const summaryParts: string[] = [];
-  summaryParts.push(`${items.length} equipment, total book value RM${totalValue.toFixed(0)}`);
+  summaryParts.push(`${items.length} item${items.length !== 1 ? "s" : ""} tracked, total book value RM${totalValue.toFixed(0)}`);
   summaryParts.push(`monthly depreciation RM${totalMonthlyDep.toFixed(0)}`);
   if (serviceOverdue.length > 0) summaryParts.push(`${serviceOverdue.length} overdue for service (${serviceOverdue.map((e) => e.name.split(" ")[0]).join(", ")})`);
 

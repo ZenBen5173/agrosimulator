@@ -99,10 +99,14 @@ export default function DashboardPage() {
   const summaryParts: string[] = [];
   if (summary) {
     summaryParts.push(net >= 0 ? `Net profit RM${net.toFixed(2)} this period` : `Net loss RM${Math.abs(net).toFixed(2)} — expenses exceed income`);
-    const sorted = [...summary.by_category].sort((a, b) => b.amount - a.amount);
-    if (sorted.length > 0) summaryParts.push(`${sorted[0].category.toLowerCase()} is your biggest expense (RM${sorted[0].amount.toFixed(0)})`);
+    // Biggest expense category (filter out income categories)
+    const expenseRecords = records.filter((r) => r.record_type === "expense");
+    const expenseByCategory: Record<string, number> = {};
+    for (const r of expenseRecords) expenseByCategory[r.category] = (expenseByCategory[r.category] || 0) + r.amount;
+    const topExpenseCategory = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1])[0];
+    if (topExpenseCategory) summaryParts.push(`${topExpenseCategory[0]} is your biggest expense (RM${topExpenseCategory[1].toFixed(0)})`);
     const topIncome = records.filter((r) => r.record_type === "income").sort((a, b) => b.amount - a.amount)[0];
-    if (topIncome) summaryParts.push(`top sale: RM${topIncome.amount.toFixed(0)} from ${topIncome.category.toLowerCase()}`);
+    if (topIncome) summaryParts.push(`top sale: RM${topIncome.amount.toFixed(0)} from ${topIncome.category}`);
   }
 
   return (

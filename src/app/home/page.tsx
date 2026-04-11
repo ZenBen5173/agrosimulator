@@ -257,7 +257,7 @@ export default function HomePage() {
       summaryParts.push("high heat today \u2014 water early morning to reduce evaporation");
     }
   }
-  if (alerts.length > 0) summaryParts.push(alerts[0].title.toLowerCase());
+  if (alerts.length > 0) summaryParts.push(alerts[0].title);
   if (lowStock.length > 0) summaryParts.push(`running low on ${lowStock[0].item_name}`);
   if (prepList && prepList.total_fertilizer_items.length > 0) {
     const topItems = prepList.total_fertilizer_items.slice(0, 2).map((f) => f.type.split(" (")[0]);
