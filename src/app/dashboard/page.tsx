@@ -108,7 +108,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50 pb-24">
       <PageHeader
         title="Accounts Overview"
-        breadcrumbs={[{ label: "Accounts" }]}
+        hideBack
         action={
           <button onClick={() => setSheetOpen(true)} className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
             <Plus size={14} /> Add Record

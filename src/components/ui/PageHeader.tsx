@@ -14,9 +14,10 @@ interface PageHeaderProps {
   action?: React.ReactNode;
   transparent?: boolean;
   breadcrumbs?: BreadcrumbItem[];
+  hideBack?: boolean;
 }
 
-export default function PageHeader({ title, onBack, action, transparent, breadcrumbs }: PageHeaderProps) {
+export default function PageHeader({ title, onBack, action, transparent, breadcrumbs, hideBack }: PageHeaderProps) {
   const router = useRouter();
 
   return (
@@ -47,13 +48,15 @@ export default function PageHeader({ title, onBack, action, transparent, breadcr
 
       {/* Title row */}
       <div className={`flex items-center gap-3 ${breadcrumbs ? "h-10" : "h-14"}`}>
-        <button
-          onClick={onBack || (() => router.back())}
-          className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-          aria-label="Go back"
-        >
-          <ArrowLeft size={18} className="text-gray-700" />
-        </button>
+        {!hideBack && (
+          <button
+            onClick={onBack || (() => router.back())}
+            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+            aria-label="Go back"
+          >
+            <ArrowLeft size={18} className="text-gray-700" />
+          </button>
+        )}
         <h1 className="flex-1 text-sm font-semibold text-gray-900 truncate">
           {title}
         </h1>
