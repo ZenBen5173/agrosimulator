@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ai, DEFAULT_MODEL } from "@/lib/genkit";
+import { shouldUseRealGemini, logGeminiCall } from "@/lib/gemini-budget";
 import { z } from "genkit";
 
 const ScanOutputSchema = z.object({
@@ -64,6 +65,11 @@ Handle: handwritten BM/English, thermal printed, WhatsApp screenshots, formal ty
 Common BM: "Baja" = Fertilizer, "Racun" = Pesticide, "Benih" = Seed, "Jumlah" = Total, "Tarikh" = Date.
 
 Return JSON matching the schema.`;
+
+    if (!shouldUseRealGemini("documentScan")) {
+      return NextResponse.json({ error: "Document scanning temporarily unavailable" }, { status: 422 });
+    }
+    logGeminiCall("documentScan");
 
     const { output } = await ai.generate({
       model: DEFAULT_MODEL,

@@ -1,5 +1,6 @@
 import { genkit } from "genkit";
 import { googleAI } from "@genkit-ai/googleai";
+import { shouldUseRealGemini, getCachedResponse, setCachedResponse, makeCacheKey, logGeminiCall } from "./gemini-budget";
 
 /**
  * Shared Genkit AI instance.
@@ -16,3 +17,6 @@ export const DISEASE_MODEL = "googleai/gemini-2.0-flash";
 
 /** Default model for all other calls */
 export const DEFAULT_MODEL = "googleai/gemini-2.0-flash-lite";
+
+/** Re-export budget utilities for services */
+export { shouldUseRealGemini, getCachedResponse, setCachedResponse, makeCacheKey, logGeminiCall };

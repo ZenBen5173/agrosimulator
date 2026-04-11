@@ -3,6 +3,7 @@
  * Keeps the same exported interface so API routes don't change.
  */
 import { dailyFarmOperationsFlow } from "@/flows/dailyFarmOperations";
+import { shouldUseRealGemini, logGeminiCall } from "@/lib/gemini-budget";
 
 interface PlotInput {
   label: string;
@@ -115,8 +116,12 @@ export async function generateTasks(
   _waterSource: string,
   farmId?: string
 ): Promise<GeneratedTask[]> {
+  // Budget check — skip real Gemini if feature is disabled
+  if (!shouldUseRealGemini("resources")) return getMockTasks(plots, weather);
+
   // If we have a farmId, use the Genkit flow (which autonomously gathers context)
   if (farmId) {
+    logGeminiCall("resources");
     try {
       const result = await dailyFarmOperationsFlow({ farmId });
       return result.tasks.map((t) => ({

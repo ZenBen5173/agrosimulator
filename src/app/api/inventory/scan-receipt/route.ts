@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ai, DEFAULT_MODEL } from "@/lib/genkit";
+import { shouldUseRealGemini, logGeminiCall } from "@/lib/gemini-budget";
 import { z } from "genkit";
 
 const ReceiptItemSchema = z.object({
@@ -59,6 +60,11 @@ Return JSON:
   "total_amount_rm": number,
   "overall_confidence": 0.0-1.0
 }`;
+
+    if (!shouldUseRealGemini("receiptScan")) {
+      return NextResponse.json({ error: "Receipt scanning temporarily unavailable" }, { status: 422 });
+    }
+    logGeminiCall("receiptScan");
 
     const { output } = await ai.generate({
       model: DEFAULT_MODEL,

@@ -2,6 +2,7 @@
  * Risk scoring service — retrofitted to use Genkit.
  * Keeps the same exported interface so API routes don't change.
  */
+import { shouldUseRealGemini, logGeminiCall } from "@/lib/gemini-budget";
 import { riskAssessmentFlow } from "@/flows/riskAssessment";
 
 interface PlotInput {
@@ -84,6 +85,9 @@ export async function assessRisk(
   weatherHistory: WeatherHistoryDay[],
   farmId?: string
 ): Promise<PlotRiskResult[]> {
+  if (!shouldUseRealGemini("riskScoring")) return getMockResults(plots, weatherHistory);
+  logGeminiCall("riskScoring");
+
   // Use Genkit flow if farmId available
   if (farmId) {
     try {

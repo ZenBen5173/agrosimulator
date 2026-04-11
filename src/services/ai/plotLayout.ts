@@ -2,6 +2,7 @@
  * Plot layout generation service — retrofitted to use Genkit.
  * Keeps the same exported interface so API routes don't change.
  */
+import { shouldUseRealGemini, logGeminiCall } from "@/lib/gemini-budget";
 import { ai, DEFAULT_MODEL } from "@/lib/genkit";
 import { z } from "genkit";
 import type { GridJson } from "@/types/farm";
@@ -103,6 +104,9 @@ export async function generatePlotLayout(
   district: string,
   state: string
 ): Promise<GridJson> {
+  if (!shouldUseRealGemini("plotLayout")) return getFallbackGrid(gridSize);
+  logGeminiCall("plotLayout");
+
   try {
     const result = await generatePlotLayoutFlow({
       gridSize,

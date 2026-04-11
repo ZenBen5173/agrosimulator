@@ -2,6 +2,7 @@
  * Planting planner service — retrofitted to use Genkit.
  * Keeps the same exported interface so API routes don't change.
  */
+import { shouldUseRealGemini, logGeminiCall } from "@/lib/gemini-budget";
 import { plantingRecommendationFlow } from "@/flows/plantingRecommendation";
 
 interface PlotContext {
@@ -102,6 +103,9 @@ export async function generatePlantingPlan(
   farmId?: string,
   plotId?: string
 ): Promise<PlantingPlan> {
+  if (!shouldUseRealGemini("planting")) return getMockPlan(plot, diseaseHistory);
+  logGeminiCall("planting");
+
   if (farmId && plotId) {
     try {
       return await plantingRecommendationFlow({

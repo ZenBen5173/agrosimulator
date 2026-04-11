@@ -2,6 +2,7 @@
  * Farm research service — retrofitted to use Genkit.
  * Keeps the same exported interface so API routes don't change.
  */
+import { shouldUseRealGemini, logGeminiCall } from "@/lib/gemini-budget";
 import { ai, DEFAULT_MODEL } from "@/lib/genkit";
 import { z } from "genkit";
 
@@ -129,6 +130,9 @@ export async function researchFarm(
 ): Promise<FarmResearchResult> {
   const lat = (boundingBox.north + boundingBox.south) / 2;
   const lng = (boundingBox.east + boundingBox.west) / 2;
+
+  if (!shouldUseRealGemini("farmResearch")) return getMockResult(lat, lng);
+  logGeminiCall("farmResearch");
 
   try {
     return await researchFarmFlow({ lat, lng, areaAcres });

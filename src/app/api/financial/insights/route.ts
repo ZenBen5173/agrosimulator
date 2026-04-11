@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ai, DEFAULT_MODEL } from "@/lib/genkit";
+import { shouldUseRealGemini } from "@/lib/gemini-budget";
 import { z } from "genkit";
 
 const InsightSchema = z.object({
@@ -124,6 +125,7 @@ Provide:
 Return JSON matching the schema.`;
 
     try {
+      if (!shouldUseRealGemini("resources")) throw new Error("Budget: skip");
       const { output } = await ai.generate({
         model: DEFAULT_MODEL,
         prompt,
