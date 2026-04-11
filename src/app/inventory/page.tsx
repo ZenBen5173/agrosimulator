@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Camera, ChevronDown } from "lucide-react";
+import { Plus, Camera, ChevronDown, ChevronRight } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -202,39 +202,31 @@ export default function InventoryPage() {
           ) : items.length === 0 ? (
             <div className="px-3 py-8 text-center text-xs text-gray-400">No inventory items yet</div>
           ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-[10px] text-gray-400 border-b border-gray-50">
-                  <th className="text-left font-medium px-3 py-1.5">Item</th>
-                  <th className="text-left font-medium px-2 py-1.5 w-16">Type</th>
-                  <th className="text-right font-medium px-2 py-1.5">Stock</th>
-                  <th className="text-right font-medium px-3 py-1.5">Price/unit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => {
-                  const isLow = item.reorder_threshold && item.current_quantity <= item.reorder_threshold;
-                  return (
-                    <tr key={item.id} className="border-b border-gray-50 last:border-0">
-                      <td className="px-3 py-2 text-gray-800">
-                        <div className="flex items-center gap-1.5">
-                          {isLow && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />}
-                          <span className="font-medium">{item.item_name}</span>
-                        </div>
-                        {item.supplier_name && <p className="text-[10px] text-gray-400 mt-0.5">{item.supplier_name}</p>}
-                      </td>
-                      <td className="px-2 py-2 text-[10px] text-gray-400 capitalize">{item.item_type}</td>
-                      <td className={`px-2 py-2 text-right font-medium ${isLow ? "text-red-500" : "text-gray-700"}`}>
-                        {item.current_quantity} {item.unit}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-500">
-                        {item.last_purchase_price_rm ? `RM${item.last_purchase_price_rm.toFixed(2)}` : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div>
+              {items.map((item) => {
+                const isLow = item.reorder_threshold && item.current_quantity <= item.reorder_threshold;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => router.push(`/inventory/${item.id}`)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {isLow && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />}
+                        <span className="text-xs font-medium text-gray-800">{item.item_name}</span>
+                      </div>
+                      {item.supplier_name && <p className="text-[10px] text-gray-400 mt-0.5">{item.supplier_name}</p>}
+                    </div>
+                    <span className="text-[10px] text-gray-400 capitalize flex-shrink-0">{item.item_type}</span>
+                    <span className={`text-xs font-medium flex-shrink-0 w-16 text-right ${isLow ? "text-red-500" : "text-gray-700"}`}>
+                      {item.current_quantity} {item.unit}
+                    </span>
+                    <ChevronRight size={12} className="text-gray-300 flex-shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
