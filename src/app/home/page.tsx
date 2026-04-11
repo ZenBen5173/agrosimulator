@@ -6,11 +6,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2,
   ChevronRight,
-  CloudSun,
   AlertTriangle,
+  AlertCircle,
+  Thermometer,
+  Wind,
   Droplets,
-  Leaf,
-  Bug,
+  Sun,
   Clock,
   ThumbsUp,
   Minus,
@@ -19,14 +20,17 @@ import {
   Package,
   BarChart3,
   Activity,
+  ChevronDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useFarmStore } from "@/stores/farmStore";
 import FarmSwitcher from "@/components/home/FarmSwitcher";
 import NotificationBell from "@/components/NotificationBell";
 import { SkeletonCard, SkeletonLine } from "@/components/ui/Skeleton";
-import type { PlotData, MarketPrice, TaskData } from "@/types/farm";
+import type { TaskData } from "@/types/farm";
 import toast from "react-hot-toast";
+
+// ── Interfaces ──
 
 interface WeatherData {
   condition: string;
@@ -34,15 +38,37 @@ interface WeatherData {
   humidity_pct: number;
   rainfall_mm: number;
   wind_kmh: number;
+  uv_index?: number;
   forecast: { date: string; condition: string; temp_min: number; temp_max: number; rain_chance: number }[];
 }
 
-interface PrepList {
+interface PlotResourceNeed {
+  label: string;
+  crop_name: string;
+  fertilizer_type: string | null;
+  fertilizer_grams: number;
+  fertilizer_due: boolean;
+  pesticide_type: string | null;
+  pesticide_ml: number;
+  pesticide_due: boolean;
+  water_litres: number;
+  skip_water: boolean;
+}
+
+interface PrepListFull {
   total_water_litres: number;
   total_fertilizer_items: { type: string; grams: number }[];
-  total_pesticide_items: { type: string; grams?: number; ml: number }[];
+  total_pesticide_items: { type: string; ml: number }[];
   total_estimated_cost_rm: number;
   total_labour_minutes: number;
+  plots: PlotResourceNeed[];
+}
+
+interface InventoryItem {
+  item_name: string;
+  current_quantity: number;
+  unit: string;
+  reorder_threshold: number | null;
 }
 
 interface FarmAlert {
@@ -62,44 +88,52 @@ interface DiagnosisSession {
   plots: { label: string; crop_name: string } | null;
 }
 
-const WEATHER_EMOJI: Record<string, string> = {
-  sunny: "☀️", overcast: "⛅", rainy: "🌧️", thunderstorm: "⛈️", drought: "🔥", flood_risk: "🌊",
-};
-
-const FORECAST_EMOJI: Record<string, string> = {
-  sunny: "☀️", overcast: "⛅", rainy: "🌧️", thunderstorm: "⛈️", drought: "🔥", flood_risk: "🌊",
-};
-
-const TASK_EMOJI: Record<string, string> = {
-  inspection: "🔍", watering: "💧", fertilizing: "🌱", treatment: "💊",
-  harvesting: "🌾", replanting: "🔄", farm_wide: "🏡",
-};
-
-const PRIORITY_STYLE: Record<string, { bg: string; text: string }> = {
-  urgent: { bg: "bg-red-100", text: "text-red-700" },
-  normal: { bg: "bg-amber-100", text: "text-amber-700" },
-  low: { bg: "bg-gray-100", text: "text-gray-500" },
-};
+// ── Constants (no emojis) ──
 
 const CONDITION_LABEL: Record<string, string> = {
   sunny: "Sunny", overcast: "Cloudy", rainy: "Rainy", thunderstorm: "Storm", drought: "Drought", flood_risk: "Flood Risk",
 };
 
+const PRIORITY_BADGE: Record<string, { label: string; cls: string }> = {
+  urgent: { label: "URG", cls: "bg-red-100 text-red-700" },
+  normal: { label: "NRM", cls: "bg-amber-50 text-amber-600" },
+  low: { label: "LOW", cls: "bg-gray-100 text-gray-500" },
+};
+
+// ── Gauge bar component ──
+
+function Gauge({ value, max, color, label, icon: Icon }: { value: number; max: number; color: string; label: string; icon: typeof Thermometer }) {
+  const pct = Math.min(100, (value / max) * 100);
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <Icon size={13} className="text-gray-400 flex-shrink-0" />
+      <span className="w-14 text-gray-500 truncate">{label}</span>
+      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-8 text-right font-medium text-gray-700">{value}</span>
+    </div>
+  );
+}
+
+// ── Main ──
+
 export default function HomePage() {
   const router = useRouter();
   const supabase = createClient();
   const store = useFarmStore();
-  const { farm, farms, plots, weather, tasks, marketPrices } = store;
+  const { farm, farms, plots, weather, tasks } = store;
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [prepList, setPrepList] = useState<PrepList | null>(null);
+  const [prepList, setPrepList] = useState<PrepListFull | null>(null);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [alerts, setAlerts] = useState<FarmAlert[]>([]);
   const [treatments, setTreatments] = useState<DiagnosisSession[]>([]);
-  const [lowStock, setLowStock] = useState<{ item_name: string; current_quantity: number; unit: string }[]>([]);
-  const [prepExpanded, setPrepExpanded] = useState(false);
+  const [lowStock, setLowStock] = useState<InventoryItem[]>([]);
+  const [expandedTask, setExpandedTask] = useState<string | null>(null);
 
-  // ── Data Loading (kept from original) ──
+  // ── Data Loading ──
   useEffect(() => {
     async function load() {
       try {
@@ -119,7 +153,6 @@ export default function HomePage() {
         const farmRow = (prevFarmId && allFarms.find((f) => f.id === prevFarmId)) || allFarms[0];
         store.setFarm(farmRow);
 
-        // Parallel fetches
         const [plotsRes, pricesApiRes] = await Promise.all([
           supabase.from("plots")
             .select("id, label, crop_name, growth_stage, warning_level, colour_hex, planted_date, expected_harvest, photo_url")
@@ -131,13 +164,12 @@ export default function HomePage() {
         store.setMarketPrices(pricesApiRes.prices || []);
         setLoading(false);
 
-        // Non-blocking: weather, tasks, AI, prep list, alerts, treatments, inventory
-        const weatherPromise = fetch(`/api/weather?farm_id=${farmRow.id}`)
+        // Non-blocking fetches
+        fetch(`/api/weather?farm_id=${farmRow.id}`)
           .then((r) => r.ok ? r.json() : null)
           .then((d) => { if (d) store.setWeather(d); })
           .catch(() => {});
 
-        // Tasks + risk (throttled)
         const AI_THROTTLE_KEY = "agro_ai_last_run";
         const lastRun = sessionStorage.getItem(AI_THROTTLE_KEY);
         const now = Date.now();
@@ -145,62 +177,27 @@ export default function HomePage() {
 
         if (shouldRunAI) {
           sessionStorage.setItem(AI_THROTTLE_KEY, String(now));
-          fetch("/api/tasks/generate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ farm_id: farmRow.id }),
-          }).then((r) => r.ok ? r.json() : null)
-            .then((d) => { if (d?.tasks) store.setTasks(d.tasks); })
-            .catch(() => {});
-
-          fetch("/api/plots/recalculate-risk", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ farm_id: farmRow.id }),
-          }).catch(() => {});
+          fetch("/api/tasks/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ farm_id: farmRow.id }) })
+            .then((r) => r.ok ? r.json() : null).then((d) => { if (d?.tasks) store.setTasks(d.tasks); }).catch(() => {});
+          fetch("/api/plots/recalculate-risk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ farm_id: farmRow.id }) }).catch(() => {});
         } else {
-          fetch(`/api/tasks/list?farm_id=${farmRow.id}`)
-            .then((r) => r.ok ? r.json() : null)
-            .then((d) => { if (d?.tasks) store.setTasks(d.tasks); })
-            .catch(() => {});
+          fetch(`/api/tasks/list?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => { if (d?.tasks) store.setTasks(d.tasks); }).catch(() => {});
         }
 
-        // Prep list
-        fetch(`/api/prep-list?farm_id=${farmRow.id}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => { if (d) setPrepList(d); })
-          .catch(() => {});
-
-        // Alerts
-        fetch(`/api/alerts?farm_id=${farmRow.id}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => { if (d && Array.isArray(d)) setAlerts(d.filter((a: FarmAlert) => a.severity === "critical" || a.severity === "high").slice(0, 3)); })
-          .catch(() => {});
-
-        // Active treatments
-        fetch(`/api/diagnosis?farm_id=${farmRow.id}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => {
-            if (d && Array.isArray(d)) {
-              const today = new Date().toISOString().split("T")[0];
-              setTreatments(d.filter((s: DiagnosisSession) => s.follow_up_due && s.follow_up_due <= today && s.follow_up_status === "pending").slice(0, 3));
-            }
-          })
-          .catch(() => {});
-
-        // Low stock inventory
-        fetch(`/api/inventory?farm_id=${farmRow.id}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => {
-            if (d && Array.isArray(d)) {
-              setLowStock(d.filter((i: { reorder_threshold: number | null; current_quantity: number }) =>
-                i.reorder_threshold && i.current_quantity <= i.reorder_threshold
-              ).slice(0, 3));
-            }
-          })
-          .catch(() => {});
-
-        await weatherPromise;
+        fetch(`/api/prep-list?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => { if (d) setPrepList(d); }).catch(() => {});
+        fetch(`/api/inventory?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => {
+          if (d && Array.isArray(d)) {
+            setInventory(d);
+            setLowStock(d.filter((i: InventoryItem) => i.reorder_threshold && i.current_quantity <= i.reorder_threshold).slice(0, 5));
+          }
+        }).catch(() => {});
+        fetch(`/api/alerts?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => { if (d && Array.isArray(d)) setAlerts(d.filter((a: FarmAlert) => a.severity === "critical" || a.severity === "high").slice(0, 3)); }).catch(() => {});
+        fetch(`/api/diagnosis?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => {
+          if (d && Array.isArray(d)) {
+            const today = new Date().toISOString().split("T")[0];
+            setTreatments(d.filter((s: DiagnosisSession) => s.follow_up_due && s.follow_up_due <= today && s.follow_up_status === "pending").slice(0, 3));
+          }
+        }).catch(() => {});
       } catch (err) {
         console.error("Failed to load farm:", err);
         setLoading(false);
@@ -211,41 +208,32 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCompleteTask = useCallback(async (taskId: string) => {
+  const handleCompleteTask = useCallback(async (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
-      const res = await fetch("/api/tasks/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId }),
-      });
-      if (res.ok) { store.removeTask(taskId); toast.success("Task done!"); }
-    } catch { toast.error("Failed to complete task"); }
+      const res = await fetch("/api/tasks/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task_id: taskId }) });
+      if (res.ok) { store.removeTask(taskId); toast.success("Task done"); }
+    } catch { toast.error("Failed"); }
   }, [store]);
 
   const handleFollowUp = useCallback(async (sessionId: string, status: "better" | "same" | "worse") => {
     try {
-      await fetch("/api/diagnosis", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, status }),
-      });
+      await fetch("/api/diagnosis", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: sessionId, status }) });
       setTreatments((prev) => prev.filter((t) => t.id !== sessionId));
-      if (status === "better") toast.success("Treatment worked!");
-      else if (status === "same") toast("Recheck scheduled", { icon: "🔄" });
+      if (status === "better") toast.success("Treatment worked");
+      else if (status === "same") toast("Recheck scheduled");
       else toast.error("Escalating to expert");
     } catch { toast.error("Failed"); }
   }, []);
 
-  // ── Loading states ──
+  // ── Loading / Error ──
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 px-4 pt-14">
         <SkeletonLine className="h-5 w-32 mb-4" />
-        <SkeletonCard className="h-16 mb-3" />
         <SkeletonCard className="h-24 mb-3" />
         <SkeletonCard className="h-20 mb-3" />
-        <SkeletonCard className="h-20 mb-3" />
-        <SkeletonCard className="h-20" />
+        <SkeletonCard className="h-32 mb-3" />
       </div>
     );
   }
@@ -254,10 +242,10 @@ export default function HomePage() {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50 px-6">
         <div className="text-center">
-          <span className="mb-4 block text-4xl">😟</span>
-          <p className="text-lg text-gray-600">{loadError ? "Unable to load your farm." : "No farm found."}</p>
-          <button onClick={() => loadError ? window.location.reload() : router.push("/onboarding")} className="mt-4 rounded-xl bg-green-600 px-6 py-3 font-semibold text-white">
-            {loadError ? "Tap to retry" : "Set up farm"}
+          <AlertCircle size={40} className="mx-auto mb-3 text-gray-300" />
+          <p className="text-base text-gray-600">{loadError ? "Unable to load your farm." : "No farm found."}</p>
+          <button onClick={() => loadError ? window.location.reload() : router.push("/onboarding")} className="mt-4 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white">
+            {loadError ? "Retry" : "Set up farm"}
           </button>
         </div>
       </div>
@@ -265,192 +253,227 @@ export default function HomePage() {
   }
 
   const incompleteTasks = tasks.filter((t) => !t.completed);
-  const urgentTasks = incompleteTasks.filter((t) => t.priority === "urgent");
+  const urgentCount = incompleteTasks.filter((t) => t.priority === "urgent").length;
+
+  // Aggregate prep resources by item
+  const resourceRows: { name: string; needed: string; stock: string | null; isLow: boolean }[] = [];
+  if (prepList) {
+    for (const f of prepList.total_fertilizer_items) {
+      const inv = inventory.find((i) => i.item_name.toLowerCase().includes(f.type.toLowerCase().split(" ")[0]));
+      const isLow = inv ? (inv.reorder_threshold ? inv.current_quantity <= inv.reorder_threshold : false) : false;
+      resourceRows.push({ name: f.type, needed: `${f.grams}g`, stock: inv ? `${inv.current_quantity} ${inv.unit}` : null, isLow });
+    }
+    for (const p of prepList.total_pesticide_items) {
+      const inv = inventory.find((i) => i.item_name.toLowerCase().includes(p.type.toLowerCase().split(" ")[0]));
+      const isLow = inv ? (inv.reorder_threshold ? inv.current_quantity <= inv.reorder_threshold : false) : false;
+      resourceRows.push({ name: p.type, needed: `${p.ml}ml`, stock: inv ? `${inv.current_quantity} ${inv.unit}` : null, isLow });
+    }
+    if (prepList.total_water_litres > 0) {
+      resourceRows.push({ name: "Water", needed: `${prepList.total_water_litres}L`, stock: null, isLow: false });
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* ── Header ── */}
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-lg border-b border-gray-100 px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {farms.length > 1 ? <FarmSwitcher /> : (
-              <h1 className="text-lg font-bold text-gray-900">{farm.name || "My Farm"}</h1>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {weather && (
-              <button onClick={() => router.push("/weather")} className="flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5">
-                <span className="text-sm">{WEATHER_EMOJI[weather.condition] || "🌤️"}</span>
-                <span className="text-xs font-medium text-gray-700">{weather.temp_celsius}°</span>
-              </button>
-            )}
-            <NotificationBell />
-          </div>
+          {farms.length > 1 ? <FarmSwitcher /> : (
+            <h1 className="text-base font-semibold text-gray-900">{farm.name || "My Farm"}</h1>
+          )}
+          <NotificationBell />
         </div>
       </div>
 
-      <div className="px-4 pt-4 space-y-4">
+      <div className="px-4 pt-3 space-y-3">
 
-        {/* ── Alert Banner (conditional) ── */}
+        {/* ── Alert Banner ── */}
         {alerts.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl bg-red-50 border border-red-200 p-3"
-          >
-            <button onClick={() => router.push("/alerts")} className="w-full text-left">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertTriangle size={16} className="text-red-500" />
-                <span className="text-xs font-bold text-red-700 uppercase">{alerts.length} Alert{alerts.length > 1 ? "s" : ""}</span>
-                <ChevronRight size={14} className="text-red-400 ml-auto" />
-              </div>
-              <p className="text-sm text-red-700 line-clamp-1">{alerts[0].title}</p>
-            </button>
-          </motion.div>
-        )}
-
-        {/* ── Weather Strip ── */}
-        {weather && weather.forecast && weather.forecast.length > 0 && (
-          <button onClick={() => router.push("/weather")} className="w-full text-left">
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
-              {weather.forecast.slice(0, 5).map((day, i) => (
-                <div key={i} className="flex-shrink-0 rounded-xl bg-white border border-gray-100 px-3 py-2 text-center min-w-[64px]">
-                  <p className="text-[10px] text-gray-400 font-medium">
-                    {new Date(day.date).toLocaleDateString("en", { weekday: "short" })}
-                  </p>
-                  <p className="text-lg my-0.5">{FORECAST_EMOJI[day.condition] || "🌤️"}</p>
-                  <p className="text-[10px] text-gray-600 font-medium">{day.temp_min}–{day.temp_max}°</p>
-                </div>
-              ))}
-            </div>
+          <button onClick={() => router.push("/alerts")} className="w-full rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 flex items-center gap-2 text-left">
+            <AlertTriangle size={15} className="text-red-500 flex-shrink-0" />
+            <span className="text-xs font-semibold text-red-700 flex-1 truncate">{alerts[0].title}</span>
+            <span className="text-[10px] text-red-500 font-medium">{alerts.length}</span>
+            <ChevronRight size={14} className="text-red-400" />
           </button>
         )}
 
-        {/* ── Prep List Card ── */}
-        {prepList && (prepList.total_water_litres > 0 || prepList.total_fertilizer_items.length > 0 || prepList.total_pesticide_items.length > 0) && (
-          <div className="rounded-xl bg-white border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => setPrepExpanded(!prepExpanded)}
-              className="w-full px-4 py-3 flex items-center justify-between"
-            >
+        {/* ── Weather — Today Only ── */}
+        {weather && (
+          <button onClick={() => router.push("/weather")} className="w-full text-left rounded-lg border border-gray-200 bg-white p-3">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Today&apos;s Weather</span>
+              <ChevronRight size={14} className="text-gray-300" />
+            </div>
+            <div className="flex items-start gap-4">
+              {/* Left: temp + condition */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Bring Today</p>
-                <div className="flex items-center gap-3 mt-1">
-                  {prepList.total_water_litres > 0 && (
-                    <span className="flex items-center gap-1 text-sm text-blue-600 font-medium">
-                      <Droplets size={14} /> {prepList.total_water_litres}L
-                    </span>
-                  )}
-                  {prepList.total_fertilizer_items.map((f) => (
-                    <span key={f.type} className="flex items-center gap-1 text-sm text-green-600 font-medium">
-                      <Leaf size={14} /> {f.grams}g
-                    </span>
-                  ))}
-                  {prepList.total_pesticide_items.map((p) => (
-                    <span key={p.type} className="flex items-center gap-1 text-sm text-amber-600 font-medium">
-                      <Bug size={14} /> {p.ml}ml
-                    </span>
+                <p className="text-3xl font-bold text-gray-900 leading-none">{weather.temp_celsius}&deg;</p>
+                <p className="text-xs text-gray-500 mt-1">{CONDITION_LABEL[weather.condition] || weather.condition}</p>
+                {weather.rainfall_mm > 0 && (
+                  <p className="text-[10px] text-blue-500 mt-0.5">{weather.rainfall_mm}mm rain</p>
+                )}
+              </div>
+              {/* Right: gauges */}
+              <div className="flex-1 space-y-1.5">
+                <Gauge value={weather.humidity_pct} max={100} color="bg-blue-400" label="Humidity" icon={Droplets} />
+                <Gauge value={weather.wind_kmh} max={40} color="bg-teal-400" label="Wind" icon={Wind} />
+                {(weather as WeatherData).uv_index !== undefined && (
+                  <Gauge value={(weather as WeatherData).uv_index!} max={11} color="bg-amber-400" label="UV" icon={Sun} />
+                )}
+              </div>
+            </div>
+            {/* Hourly rain chance bars */}
+            {weather.forecast && weather.forecast.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-gray-100">
+                <p className="text-[10px] text-gray-400 mb-1">Rain chance next days</p>
+                <div className="flex items-end gap-1 h-6">
+                  {weather.forecast.slice(0, 7).map((f, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center">
+                      <div className="w-full bg-gray-100 rounded-sm overflow-hidden" style={{ height: 20 }}>
+                        <div className="w-full bg-blue-300 rounded-sm" style={{ height: `${f.rain_chance}%`, marginTop: `${100 - f.rain_chance}%` }} />
+                      </div>
+                      <span className="text-[8px] text-gray-400 mt-0.5">{new Date(f.date).toLocaleDateString("en", { weekday: "narrow" })}</span>
+                    </div>
                   ))}
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm font-bold text-gray-800">RM{prepList.total_estimated_cost_rm.toFixed(2)}</p>
-                <p className="text-[10px] text-gray-400">{prepList.total_labour_minutes}min work</p>
-              </div>
+            )}
+          </button>
+        )}
+
+        {/* ── Resources Needed Today ── */}
+        {resourceRows.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Resources Needed Today</span>
+              <span className="text-xs font-semibold text-gray-700">RM{prepList?.total_estimated_cost_rm.toFixed(2)}</span>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[10px] text-gray-400 border-b border-gray-50">
+                  <th className="text-left font-medium px-3 py-1.5">Item</th>
+                  <th className="text-right font-medium px-3 py-1.5">Need</th>
+                  <th className="text-right font-medium px-3 py-1.5">Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resourceRows.map((r, i) => (
+                  <tr key={i} className="border-b border-gray-50 last:border-0">
+                    <td className="px-3 py-2 text-gray-700 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {r.isLow && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />}
+                        {r.name}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-600">{r.needed}</td>
+                    <td className={`px-3 py-2 text-right ${r.isLow ? "text-red-500 font-medium" : "text-gray-400"}`}>
+                      {r.stock || "--"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button onClick={() => router.push("/prep")} className="w-full px-3 py-2 text-[11px] text-green-600 font-medium text-left border-t border-gray-100 hover:bg-gray-50">
+              View full breakdown per plot
             </button>
-            <AnimatePresence>
-              {prepExpanded && (
-                <motion.div
-                  initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }}
-                  className="border-t border-gray-100 px-4 pb-3"
-                >
-                  <button onClick={() => router.push("/prep")} className="mt-2 text-xs text-green-600 font-medium">
-                    View full prep breakdown &rarr;
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         )}
 
-        {/* ── Tasks ── */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-bold text-gray-800">
-              Today&apos;s Tasks
-              {urgentTasks.length > 0 && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600">
-                  {urgentTasks.length} urgent
-                </span>
+        {/* ── Tasks — Compact Datatable ── */}
+        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Tasks</span>
+              {urgentCount > 0 && (
+                <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">{urgentCount} urgent</span>
               )}
-            </h2>
-            <span className="text-xs text-gray-400">{incompleteTasks.length} remaining</span>
+            </div>
+            <span className="text-[10px] text-gray-400">{incompleteTasks.length} remaining</span>
           </div>
 
           {incompleteTasks.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-center">
-              <p className="text-sm text-gray-400">All caught up! No tasks for today.</p>
-            </div>
+            <div className="px-3 py-6 text-center text-xs text-gray-400">No tasks for today</div>
           ) : (
-            <div className="space-y-2">
-              {incompleteTasks.slice(0, 8).map((task) => {
-                const pStyle = PRIORITY_STYLE[task.priority] || PRIORITY_STYLE.normal;
+            <div>
+              {incompleteTasks.slice(0, 10).map((task) => {
+                const badge = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.normal;
+                const isExpanded = expandedTask === task.id;
+                const taskExt = task as TaskData & { resource_item?: string; resource_quantity?: number; resource_unit?: string; timing_recommendation?: string };
                 return (
-                  <motion.div
-                    key={task.id}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-start gap-3 rounded-xl bg-white border border-gray-100 px-3 py-3"
-                  >
-                    <button
-                      onClick={() => handleCompleteTask(task.id)}
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-2 border-gray-200 hover:border-green-500 hover:bg-green-50 transition-all active:scale-90"
+                  <div key={task.id} className="border-b border-gray-50 last:border-0">
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50/50 transition-colors"
+                      onClick={() => setExpandedTask(isExpanded ? null : task.id)}
                     >
-                      <CheckCircle2 size={14} className="text-transparent" />
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{TASK_EMOJI[task.task_type] || "📋"}</span>
-                        <p className="text-sm font-medium text-gray-800 truncate">{task.title}</p>
-                      </div>
-                      <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">{task.description}</p>
-                      {(task as TaskData & { resource_item?: string; resource_quantity?: number; resource_unit?: string }).resource_item && (
-                        <p className="text-[10px] text-green-600 mt-0.5 font-medium">
-                          {(task as TaskData & { resource_quantity?: number }).resource_quantity} {(task as TaskData & { resource_unit?: string }).resource_unit} {(task as TaskData & { resource_item?: string }).resource_item}
-                        </p>
+                      {/* Checkbox */}
+                      <button
+                        onClick={(e) => handleCompleteTask(task.id, e)}
+                        className="w-5 h-5 rounded-full border-[1.5px] border-gray-300 flex items-center justify-center flex-shrink-0 hover:border-green-500 hover:bg-green-50 transition-colors"
+                      >
+                        <CheckCircle2 size={10} className="text-transparent" />
+                      </button>
+                      {/* Title */}
+                      <span className="flex-1 text-xs text-gray-800 leading-snug">{task.title}</span>
+                      {/* Plot label */}
+                      {task.plot_label && (
+                        <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-mono flex-shrink-0">{task.plot_label}</span>
                       )}
+                      {/* Priority */}
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${badge.cls}`}>{badge.label}</span>
+                      {/* Expand indicator */}
+                      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.15 }}>
+                        <ChevronDown size={12} className="text-gray-300" />
+                      </motion.div>
                     </div>
-                    <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${pStyle.bg} ${pStyle.text}`}>
-                      {task.priority}
-                    </span>
-                  </motion.div>
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="px-3 pb-2 text-xs text-gray-500 border-t border-gray-50 bg-gray-50/30"
+                        >
+                          <p className="pt-2">{task.description}</p>
+                          {taskExt.resource_item && (
+                            <p className="mt-1 text-green-600 font-medium">
+                              {taskExt.resource_quantity} {taskExt.resource_unit} {taskExt.resource_item}
+                            </p>
+                          )}
+                          {taskExt.timing_recommendation && (
+                            <p className="mt-0.5 text-gray-400">{taskExt.timing_recommendation}</p>
+                          )}
+                          <p className="mt-1 text-[10px] text-gray-300">Type: {task.task_type} | Triggered by: {task.triggered_by || "schedule"}</p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 );
               })}
             </div>
           )}
         </div>
 
-        {/* ── Active Treatments (conditional) ── */}
+        {/* ── Active Treatments ── */}
         {treatments.length > 0 && (
-          <div>
-            <h2 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-1">
-              <Clock size={14} className="text-amber-500" />
-              Follow-up Due
-            </h2>
+          <div className="rounded-lg border border-amber-200 bg-amber-50/50 overflow-hidden">
+            <div className="px-3 py-2 border-b border-amber-200 flex items-center gap-1.5">
+              <Clock size={13} className="text-amber-500" />
+              <span className="text-[10px] font-semibold text-amber-600 uppercase tracking-wider">Follow-up Due</span>
+            </div>
             {treatments.map((t) => (
-              <div key={t.id} className="rounded-xl bg-amber-50 border border-amber-200 p-3 mb-2">
-                <p className="text-sm font-medium text-gray-800">
-                  {t.plots?.label}: {t.diagnosis_name || "Treatment check"}
-                </p>
-                <p className="text-xs text-gray-500 mb-2">{t.plots?.crop_name}</p>
-                <div className="flex gap-2">
+              <div key={t.id} className="px-3 py-2.5 border-b border-amber-100 last:border-0">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-gray-800">{t.plots?.label}: {t.diagnosis_name || "Treatment check"}</span>
+                  <span className="text-[10px] text-gray-400">{t.plots?.crop_name}</span>
+                </div>
+                <div className="flex gap-1.5">
                   {(["better", "same", "worse"] as const).map((status) => {
-                    const cfg = { better: { icon: ThumbsUp, color: "bg-green-500", label: "Better" }, same: { icon: Minus, color: "bg-amber-500", label: "Same" }, worse: { icon: ThumbsDown, color: "bg-red-500", label: "Worse" } }[status];
+                    const cfg = { better: { icon: ThumbsUp, cls: "bg-green-600 text-white" }, same: { icon: Minus, cls: "bg-amber-500 text-white" }, worse: { icon: ThumbsDown, cls: "bg-red-500 text-white" } }[status];
                     const Icon = cfg.icon;
                     return (
                       <button key={status} onClick={() => handleFollowUp(t.id, status)}
-                        className={`flex-1 ${cfg.color} text-white py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1`}>
-                        <Icon size={12} /> {cfg.label}
+                        className={`flex-1 ${cfg.cls} py-1.5 rounded text-[10px] font-medium flex items-center justify-center gap-1`}>
+                        <Icon size={11} /> {status.charAt(0).toUpperCase() + status.slice(1)}
                       </button>
                     );
                   })}
@@ -460,18 +483,18 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* ── Low Stock (conditional) ── */}
+        {/* ── Low Stock ── */}
         {lowStock.length > 0 && (
-          <div className="rounded-xl bg-white border border-gray-100 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-bold text-gray-800 flex items-center gap-1">
-                <Package size={14} className="text-amber-500" />
-                Low Stock
-              </h2>
-              <button onClick={() => router.push("/inventory")} className="text-xs text-green-600 font-medium">View all</button>
+          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+              <div className="flex items-center gap-1.5">
+                <Package size={13} className="text-amber-500" />
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Low Stock</span>
+              </div>
+              <button onClick={() => router.push("/inventory")} className="text-[10px] text-green-600 font-medium">View all</button>
             </div>
             {lowStock.map((item, i) => (
-              <div key={i} className="flex items-center justify-between py-1.5 text-sm">
+              <div key={i} className="flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-0 text-xs">
                 <span className="text-gray-700">{item.item_name}</span>
                 <span className="text-red-500 font-medium">{item.current_quantity} {item.unit}</span>
               </div>
@@ -482,17 +505,17 @@ export default function HomePage() {
         {/* ── Quick Links ── */}
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
           {[
-            { label: "Market Prices", icon: BarChart3, href: "/market", color: "text-indigo-600 bg-indigo-50" },
-            { label: "All Alerts", icon: Bell, href: "/alerts", color: "text-red-600 bg-red-50" },
-            { label: "Activity Log", icon: Activity, href: "/activity", color: "text-gray-600 bg-gray-100" },
-            { label: "Inventory", icon: Package, href: "/inventory", color: "text-purple-600 bg-purple-50" },
+            { label: "Market Prices", icon: BarChart3, href: "/market", cls: "text-indigo-600 bg-indigo-50 border-indigo-100" },
+            { label: "All Alerts", icon: Bell, href: "/alerts", cls: "text-red-600 bg-red-50 border-red-100" },
+            { label: "Activity", icon: Activity, href: "/activity", cls: "text-gray-600 bg-gray-50 border-gray-200" },
+            { label: "Inventory", icon: Package, href: "/inventory", cls: "text-purple-600 bg-purple-50 border-purple-100" },
           ].map((link) => {
             const Icon = link.icon;
             return (
               <button key={link.label} onClick={() => router.push(link.href)}
-                className={`flex-shrink-0 flex items-center gap-2 rounded-xl ${link.color} px-4 py-2.5`}>
-                <Icon size={16} />
-                <span className="text-xs font-medium whitespace-nowrap">{link.label}</span>
+                className={`flex-shrink-0 flex items-center gap-1.5 rounded-lg border ${link.cls} px-3 py-2`}>
+                <Icon size={13} />
+                <span className="text-[11px] font-medium whitespace-nowrap">{link.label}</span>
               </button>
             );
           })}
