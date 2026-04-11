@@ -322,22 +322,17 @@ export default function HomePage() {
                 )}
               </div>
             </div>
-            {/* Hourly rain chance bars */}
-            {weather.forecast && weather.forecast.length > 0 && (
-              <div className="mt-3 pt-2 border-t border-gray-100">
-                <p className="text-[10px] text-gray-400 mb-1">Rain chance next days</p>
-                <div className="flex items-end gap-1 h-6">
-                  {weather.forecast.slice(0, 7).map((f, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center">
-                      <div className="w-full bg-gray-100 rounded-sm overflow-hidden" style={{ height: 20 }}>
-                        <div className="w-full bg-blue-300 rounded-sm" style={{ height: `${f.rain_chance}%`, marginTop: `${100 - f.rain_chance}%` }} />
-                      </div>
-                      <span className="text-[8px] text-gray-400 mt-0.5">{new Date(f.date).toLocaleDateString("en", { weekday: "narrow" })}</span>
-                    </div>
-                  ))}
+            {/* Today's conditions summary */}
+            {weather.forecast && weather.forecast.length > 0 && (() => {
+              const todayForecast = weather.forecast[0];
+              return todayForecast ? (
+                <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
+                  <span>Today: {todayForecast.temp_min}&deg;&ndash;{todayForecast.temp_max}&deg;C</span>
+                  <span>{todayForecast.rain_chance}% rain chance</span>
+                  <span className="text-green-600 font-medium">Details &rarr;</span>
                 </div>
-              </div>
-            )}
+              ) : null;
+            })()}
           </button>
         )}
 
