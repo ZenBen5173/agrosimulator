@@ -36,7 +36,6 @@ const FEATURES = [
   },
 ];
 
-const TECH = ["Gemini 2.0", "Firebase Genkit", "Supabase", "Next.js 16", "Vercel"];
 
 export default function LandingPage() {
   const router = useRouter();
@@ -127,43 +126,14 @@ export default function LandingPage() {
         })}
       </div>
 
-      {/* Stats */}
-      <div className="mx-6 rounded-lg border border-gray-200 overflow-hidden">
-        <div className="grid grid-cols-4 divide-x divide-gray-100">
-          {[
-            { value: "7", label: "AI Flows" },
-            { value: "8", label: "Tools" },
-            { value: "56", label: "APIs" },
-            { value: "37+", label: "Tables" },
-          ].map((s) => (
-            <div key={s.label} className="px-2 py-3 text-center">
-              <p className="text-sm font-bold text-gray-800">{s.value}</p>
-              <p className="text-[9px] text-gray-400">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Tech stack */}
-      <div className="px-6 py-6">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Built With</p>
-        <div className="flex flex-wrap gap-1.5">
-          {TECH.map((t) => (
-            <span key={t} className="text-[10px] text-gray-500 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-full">
-              {t}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Hackathon badge */}
+      {/* Footer */}
       <div className="px-6 pb-8">
         <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-center">
           <p className="text-[10px] text-gray-400">
             Project 2030: MyAI Future Hackathon — Track 1: Padi &amp; Plates
           </p>
           <p className="text-[10px] text-gray-400 mt-0.5">
-            Teo Zen Ben (Dev) &amp; Jeanette Tan En Jie (Pitch)
+            Teo Zen Ben &amp; Jeanette Tan En Jie
           </p>
         </div>
       </div>
