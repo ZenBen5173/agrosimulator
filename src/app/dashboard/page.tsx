@@ -2,18 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import {
-  TrendingUp,
-  TrendingDown,
-  Wallet,
-  Plus,
-  ArrowUpCircle,
-  ArrowDownCircle,
-} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Plus, ChevronDown } from "lucide-react";
 import { useFarmStore } from "@/stores/farmStore";
 import { createClient } from "@/lib/supabase/client";
-import Card from "@/components/ui/Card";
 import { SkeletonCard, SkeletonLine } from "@/components/ui/Skeleton";
 import RevenueChart from "@/components/dashboard/RevenueChart";
 import ExpenseBreakdown from "@/components/dashboard/ExpenseBreakdown";
@@ -36,44 +28,23 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [showAllTxns, setShowAllTxns] = useState(false);
+  const [chartsExpanded, setChartsExpanded] = useState(false);
 
-  // Load farm if not in store (direct navigation to /dashboard)
   useEffect(() => {
     async function init() {
       if (farm) return;
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.replace("/");
-        return;
-      }
-
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.replace("/"); return; }
       const { data: farmRow } = await supabase
         .from("farms")
-        .select(
-          "id, name, area_acres, grid_size, soil_type, water_source, polygon_geojson, bounding_box"
-        )
-        .eq("onboarding_done", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!farmRow) {
-        router.replace("/onboarding");
-        return;
-      }
-
+        .select("id, name, area_acres, grid_size, soil_type, water_source, polygon_geojson, bounding_box")
+        .eq("onboarding_done", true).order("created_at", { ascending: false }).limit(1).single();
+      if (!farmRow) { router.replace("/onboarding"); return; }
       setFarm(farmRow);
-
-      // Also load plots if empty
       if (plots.length === 0) {
-        const { data: plotRows } = await supabase
-          .from("plots")
-          .select(
-            "id, label, crop_name, growth_stage, warning_level, colour_hex, planted_date, expected_harvest, photo_url"
-          )
+        const { data: plotRows } = await supabase.from("plots")
+          .select("id, label, crop_name, growth_stage, warning_level, colour_hex, planted_date, expected_harvest, photo_url")
           .eq("farm_id", farmRow.id);
         setPlots(plotRows || []);
       }
@@ -97,213 +68,158 @@ export default function DashboardPage() {
     }
   }, [farm]);
 
-  useEffect(() => {
-    if (farm) {
-      fetchFinancials();
-    }
-  }, [farm, fetchFinancials]);
+  useEffect(() => { if (farm) fetchFinancials(); }, [farm, fetchFinancials]);
 
-  const plotOptions = plots.map((p) => ({
-    id: p.id,
-    label: `${p.label} (${p.crop_name})`,
-  }));
-
-  const formatRM = (val: number) => {
-    const abs = Math.abs(val);
-    if (abs >= 1000) {
-      return `RM ${(val / 1000).toFixed(1)}k`;
-    }
-    return `RM ${val.toFixed(2)}`;
-  };
+  const plotOptions = plots.map((p) => ({ id: p.id, label: `${p.label} (${p.crop_name})` }));
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + "T12:00:00");
     return d.toLocaleDateString("en-MY", { day: "numeric", month: "short" });
   };
 
-  // Loading skeleton
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 px-4 pt-6 pb-24">
-        <SkeletonLine className="mb-6 h-6 w-40" />
-        <div className="mb-5 grid grid-cols-3 gap-3">
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
-        </div>
-        <SkeletonCard className="mb-5 h-64" />
-        <SkeletonCard className="mb-5 h-56" />
+      <div className="min-h-screen bg-gray-50 px-4 pt-14">
+        <SkeletonLine className="h-5 w-40 mb-4" />
+        <SkeletonCard className="h-16 mb-3" />
+        <SkeletonCard className="h-32 mb-3" />
         <SkeletonCard className="h-40" />
       </div>
     );
   }
 
-  const recentRecords = records.slice(0, 10);
+  const recentRecords = showAllTxns ? records : records.slice(0, 8);
+  const incomeTotal = summary?.total_income || 0;
+  const expenseTotal = summary?.total_expenses || 0;
+  const net = summary?.net || 0;
+
+  // AI Summary
+  const summaryParts: string[] = [];
+  if (summary) {
+    summaryParts.push(net >= 0 ? `Net profit RM${net.toFixed(2)} this period` : `Net loss RM${Math.abs(net).toFixed(2)} — expenses exceed income`);
+    const sorted = [...summary.by_category].sort((a, b) => b.amount - a.amount);
+    if (sorted.length > 0) summaryParts.push(`${sorted[0].category.toLowerCase()} is your biggest expense (RM${sorted[0].amount.toFixed(0)})`);
+    const topIncome = records.filter((r) => r.record_type === "income").sort((a, b) => b.amount - a.amount)[0];
+    if (topIncome) summaryParts.push(`top sale: RM${topIncome.amount.toFixed(0)} from ${topIncome.category.toLowerCase()}`);
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 pt-6 pb-24">
-      {/* Page Title */}
-      <h1 className="mb-5 text-xl font-bold text-gray-900">
-        Financial Dashboard
-      </h1>
-
-      {/* Summary Cards */}
-      <div className="mb-5 grid grid-cols-3 gap-3">
-        {/* Total Income */}
-        <Card variant="default" className="p-3">
-          <div className="mb-1.5 flex items-center gap-1.5">
-            <TrendingUp size={14} className="text-green-500" />
-            <span className="text-[10px] font-medium text-gray-500">
-              Income
-            </span>
-          </div>
-          <p className="text-sm font-bold text-green-600">
-            {summary ? formatRM(summary.total_income) : "RM 0.00"}
-          </p>
-        </Card>
-
-        {/* Total Expenses */}
-        <Card variant="default" className="p-3">
-          <div className="mb-1.5 flex items-center gap-1.5">
-            <TrendingDown size={14} className="text-red-500" />
-            <span className="text-[10px] font-medium text-gray-500">
-              Expenses
-            </span>
-          </div>
-          <p className="text-sm font-bold text-red-600">
-            {summary ? formatRM(summary.total_expenses) : "RM 0.00"}
-          </p>
-        </Card>
-
-        {/* Net Profit/Loss */}
-        <Card variant="default" className="p-3">
-          <div className="mb-1.5 flex items-center gap-1.5">
-            <Wallet size={14} className="text-gray-500" />
-            <span className="text-[10px] font-medium text-gray-500">
-              Net
-            </span>
-          </div>
-          <p
-            className={`text-sm font-bold ${
-              summary && summary.net >= 0 ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {summary ? formatRM(summary.net) : "RM 0.00"}
-          </p>
-        </Card>
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Header */}
+      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-lg border-b border-gray-100 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-base font-semibold text-gray-900">Financial Overview</h1>
+          <button onClick={() => setSheetOpen(true)} className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
+            <Plus size={14} /> Add Record
+          </button>
+        </div>
       </div>
 
-      {/* AI Summary */}
-      {summary && (() => {
-        const parts: string[] = [];
-        const net = summary.net;
-        parts.push(net >= 0 ? `Net profit RM${net.toFixed(2)} this period` : `Net loss RM${Math.abs(net).toFixed(2)} this period \u2014 expenses exceed income`);
-        const sorted = [...summary.by_category].sort((a, b) => b.amount - a.amount);
-        if (sorted.length > 0) parts.push(`${sorted[0].category} is your biggest expense (RM${sorted[0].amount.toFixed(0)})`);
-        const incomeRecords = records.filter((r) => r.record_type === "income");
-        if (incomeRecords.length > 0) {
-          const topIncome = incomeRecords.sort((a, b) => b.amount - a.amount)[0];
-          parts.push(`top sale: RM${topIncome.amount.toFixed(0)} from ${topIncome.category.toLowerCase()}`);
-        }
-        return (
-          <div className="px-4 mb-4">
+      <div className="px-4 pt-3 space-y-3">
+
+        {/* AI Summary */}
+        {summaryParts.length > 0 && (
+          <div className="py-1">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
-            <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
-          </div>
-        );
-      })()}
-
-      {/* Revenue Chart */}
-      <Card variant="default" className="mb-5 p-4">
-        <h3 className="mb-3 text-sm font-bold text-gray-800">
-          Revenue Overview
-        </h3>
-        <RevenueChart records={records} />
-      </Card>
-
-      {/* Expense Breakdown */}
-      <Card variant="default" className="mb-5 p-4">
-        <h3 className="mb-3 text-sm font-bold text-gray-800">
-          Expense Breakdown
-        </h3>
-        <ExpenseBreakdown summary={summary?.by_category || []} />
-      </Card>
-
-      {/* Recent Transactions */}
-      <Card variant="default" className="mb-5 p-4">
-        <h3 className="mb-3 text-sm font-bold text-gray-800">
-          Recent Transactions
-        </h3>
-        {recentRecords.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center">
-            <p className="text-sm text-gray-400">
-              No transactions yet. Tap + to add your first record.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {recentRecords.map((record) => {
-              const isIncome = record.record_type === "income";
-              return (
-                <motion.div
-                  key={record.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2.5"
-                >
-                  {/* Icon */}
-                  <div
-                    className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${
-                      isIncome ? "bg-green-100" : "bg-red-100"
-                    }`}
-                  >
-                    {isIncome ? (
-                      <ArrowUpCircle size={16} className="text-green-600" />
-                    ) : (
-                      <ArrowDownCircle size={16} className="text-red-500" />
-                    )}
-                  </div>
-
-                  {/* Details */}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-800">
-                      {record.category}
-                    </p>
-                    {record.description && (
-                      <p className="truncate text-xs text-gray-400">
-                        {record.description}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Amount + date */}
-                  <div className="flex-shrink-0 text-right">
-                    <p
-                      className={`text-sm font-semibold ${
-                        isIncome ? "text-green-600" : "text-red-500"
-                      }`}
-                    >
-                      {isIncome ? "+" : "-"}RM{record.amount.toFixed(2)}
-                    </p>
-                    <p className="text-[10px] text-gray-400">
-                      {formatDate(record.record_date)}
-                    </p>
-                  </div>
-                </motion.div>
-              );
-            })}
+            <p className="text-xs text-gray-600 leading-relaxed">{summaryParts.join(". ")}.</p>
           </div>
         )}
-      </Card>
 
-      {/* FAB - Floating Action Button */}
-      <motion.button
-        whileTap={{ scale: 0.9 }}
-        onClick={() => setSheetOpen(true)}
-        className="fixed right-5 bottom-20 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-lg shadow-green-600/30"
-      >
-        <Plus size={24} />
-      </motion.button>
+        {/* Summary row */}
+        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <div className="grid grid-cols-3 divide-x divide-gray-100">
+            <div className="px-3 py-3 text-center">
+              <p className="text-[10px] text-gray-400 font-medium">Income</p>
+              <p className="text-sm font-bold text-green-600 mt-0.5">RM{incomeTotal.toFixed(2)}</p>
+            </div>
+            <div className="px-3 py-3 text-center">
+              <p className="text-[10px] text-gray-400 font-medium">Expenses</p>
+              <p className="text-sm font-bold text-red-500 mt-0.5">RM{expenseTotal.toFixed(2)}</p>
+            </div>
+            <div className="px-3 py-3 text-center">
+              <p className="text-[10px] text-gray-400 font-medium">Net</p>
+              <p className={`text-sm font-bold mt-0.5 ${net >= 0 ? "text-green-600" : "text-red-500"}`}>
+                {net >= 0 ? "+" : "-"}RM{Math.abs(net).toFixed(2)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Charts (collapsible) */}
+        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <button onClick={() => setChartsExpanded(!chartsExpanded)} className="w-full px-3 py-2.5 flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Charts</span>
+            <motion.div animate={{ rotate: chartsExpanded ? 180 : 0 }} transition={{ duration: 0.15 }}>
+              <ChevronDown size={14} className="text-gray-300" />
+            </motion.div>
+          </button>
+          <AnimatePresence>
+            {chartsExpanded && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-gray-100">
+                <div className="p-3">
+                  <p className="text-xs font-medium text-gray-700 mb-2">Revenue Overview</p>
+                  <RevenueChart records={records} />
+                </div>
+                <div className="p-3 border-t border-gray-100">
+                  <p className="text-xs font-medium text-gray-700 mb-2">Expense Breakdown</p>
+                  <ExpenseBreakdown summary={summary?.by_category || []} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Transactions table */}
+        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Transactions</span>
+            <span className="text-[10px] text-gray-400">{records.length} total</span>
+          </div>
+
+          {records.length === 0 ? (
+            <div className="px-3 py-8 text-center text-xs text-gray-400">
+              No transactions yet. Tap &quot;Add Record&quot; to start tracking.
+            </div>
+          ) : (
+            <>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-[10px] text-gray-400 border-b border-gray-50">
+                    <th className="text-left font-medium px-3 py-1.5">Date</th>
+                    <th className="text-left font-medium px-3 py-1.5">Description</th>
+                    <th className="text-left font-medium px-3 py-1.5">Category</th>
+                    <th className="text-right font-medium px-3 py-1.5">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentRecords.map((r) => {
+                    const isIncome = r.record_type === "income";
+                    return (
+                      <tr key={r.id} className="border-b border-gray-50 last:border-0">
+                        <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{formatDate(r.record_date)}</td>
+                        <td className="px-3 py-2 text-gray-700 truncate max-w-[120px]">{r.description || r.category}</td>
+                        <td className="px-3 py-2">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isIncome ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500"}`}>
+                            {r.category}
+                          </span>
+                        </td>
+                        <td className={`px-3 py-2 text-right font-medium whitespace-nowrap ${isIncome ? "text-green-600" : "text-red-500"}`}>
+                          {isIncome ? "+" : "-"}RM{r.amount.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {records.length > 8 && (
+                <button onClick={() => setShowAllTxns(!showAllTxns)} className="w-full px-3 py-2 text-[11px] text-green-600 font-medium text-left border-t border-gray-100 hover:bg-gray-50">
+                  {showAllTxns ? "Show less" : `View all ${records.length} transactions`}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Add Record Sheet */}
       {farm && (
