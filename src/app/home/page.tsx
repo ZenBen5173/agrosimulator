@@ -309,13 +309,10 @@ export default function HomePage() {
 
         {/* ── Weather — Today Hourly ── */}
         {weather && (() => {
-          // Generate hourly data for today using tropical temperature curve
           const baseTemp = weather.temp_celsius;
           const hours = Array.from({ length: 24 }, (_, h) => {
-            // Tropical temp curve: coolest 5-6am, hottest 1-2pm
             const curve = Math.sin(((h - 5) / 24) * Math.PI * 2) * 0.4 + 0.1;
             const temp = Math.round(baseTemp + curve * 6 - 3);
-            // Rain probability: higher 14:00-18:00 in tropics
             const rainBase = weather.condition === "rainy" ? 60 : weather.condition === "thunderstorm" ? 80 : 10;
             const afternoonBoost = h >= 14 && h <= 18 ? 25 : 0;
             const rain = Math.min(100, Math.max(0, rainBase + afternoonBoost + Math.round((Math.sin(h * 0.7) * 15))));
@@ -324,29 +321,33 @@ export default function HomePage() {
           const now = new Date().getHours();
           const upcoming = hours.slice(now, Math.min(now + 12, 24));
           const temps = upcoming.map((h) => h.temp);
-          const minT = Math.min(...temps);
-          const maxT = Math.max(...temps);
-          const range = maxT - minT || 1;
+          const minT = Math.min(...temps) - 1;
+          const maxT = Math.max(...temps) + 1;
+          const range = maxT - minT;
 
-          // SVG temperature curve
-          const svgW = 280;
-          const svgH = 40;
-          const points = upcoming.map((h, i) => {
-            const x = (i / (upcoming.length - 1)) * svgW;
-            const y = svgH - ((h.temp - minT) / range) * (svgH - 8) - 4;
-            return `${x},${y}`;
-          }).join(" ");
+          // Curve points: each column is 48px wide, chart is 60px tall
+          const colW = 48;
+          const chartH = 60;
+          const pad = 6;
+          const totalW = upcoming.length * colW;
+          const curvePoints = upcoming.map((h, i) => {
+            const x = i * colW + colW / 2;
+            const y = pad + (chartH - 2 * pad) * (1 - (h.temp - minT) / range);
+            return { x, y };
+          });
+          const polyline = curvePoints.map((p) => `${p.x},${p.y}`).join(" ");
+          const polygon = `0,${chartH} ${polyline} ${totalW},${chartH}`;
+
+          const fmt12 = (h: number) => h === now ? "Now" : h === 0 ? "12am" : h === 12 ? "12pm" : h > 12 ? `${h - 12}pm` : `${h}am`;
 
           return (
             <button onClick={() => router.push("/weather")} className="w-full text-left rounded-lg border border-gray-200 bg-white overflow-hidden">
-              {/* Header row */}
-              <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+              {/* Header */}
+              <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-gray-900">{weather.temp_celsius}&deg;</span>
                   <span className="text-xs text-gray-500">{CONDITION_LABEL[weather.condition] || weather.condition}</span>
-                  {weather.rainfall_mm > 0 && (
-                    <span className="text-[10px] text-blue-500">{weather.rainfall_mm}mm</span>
-                  )}
+                  {weather.rainfall_mm > 0 && <span className="text-[10px] text-blue-500">{weather.rainfall_mm}mm</span>}
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-gray-400">
                   <span className="flex items-center gap-1"><Droplets size={11} /> {weather.humidity_pct}%</span>
@@ -355,43 +356,43 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Hourly scroll strip */}
+              {/* Scrollable hourly strip with integrated curve */}
               <div className="overflow-x-auto no-scrollbar">
-                <div className="flex px-3 pb-1 min-w-max">
-                  {upcoming.map((h) => (
-                    <div key={h.hour} className="flex flex-col items-center w-10 flex-shrink-0">
-                      <span className="text-[9px] text-gray-400">{h.hour === now ? "Now" : h.hour === 0 ? "12am" : h.hour === 12 ? "12pm" : h.hour > 12 ? `${h.hour - 12}pm` : `${h.hour}am`}</span>
-                      <span className="text-[11px] font-semibold text-gray-700 my-0.5">{h.temp}&deg;</span>
-                      {h.rain > 20 && (
-                        <span className="text-[8px] text-blue-400">{h.rain}%</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+                <div style={{ width: totalW }} className="relative">
+                  {/* SVG curve behind the columns */}
+                  <svg width={totalW} height={chartH} className="absolute inset-0">
+                    <defs>
+                      <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
+                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.03" />
+                      </linearGradient>
+                    </defs>
+                    <polygon points={polygon} fill="url(#tg)" />
+                    <polyline points={polyline} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    {curvePoints.map((p, i) => (
+                      <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="#f59e0b" />
+                    ))}
+                  </svg>
 
-              {/* Temperature curve */}
-              <div className="px-3 pb-2">
-                <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-8" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="tempGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-                  <polygon
-                    points={`0,${svgH} ${points} ${svgW},${svgH}`}
-                    fill="url(#tempGrad)"
-                  />
-                  <polyline
-                    points={points}
-                    fill="none"
-                    stroke="#f59e0b"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+                  {/* Hour columns on top of curve */}
+                  <div className="relative flex" style={{ height: chartH + 36 }}>
+                    {upcoming.map((h, i) => (
+                      <div key={h.hour} className="flex flex-col items-center justify-end" style={{ width: colW }}>
+                        {/* Temp label above dot */}
+                        <span
+                          className="text-[10px] font-semibold text-gray-700"
+                          style={{ marginBottom: chartH - curvePoints[i].y + 2 }}
+                        >
+                          {h.temp}&deg;
+                        </span>
+                        {/* spacer to push time label to bottom */}
+                        <div className="flex-1" />
+                        {/* Time label */}
+                        <span className="text-[9px] text-gray-400 pb-1">{fmt12(h.hour)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </button>
           );
