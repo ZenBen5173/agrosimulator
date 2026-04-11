@@ -6,8 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Camera,
   ClipboardCheck,
-  Receipt,
-  PlusCircle,
+  ScanLine,
   CloudSun,
   BarChart3,
   Bell,
@@ -39,10 +38,9 @@ const FAB_GROUPS: { label: string; items: FabAction[] }[] = [
     ],
   },
   {
-    label: "Money",
+    label: "Accounts",
     items: [
-      { key: "receipt", label: "Scan Receipt", icon: Receipt, href: "/inventory/scan", color: "bg-violet-500" },
-      { key: "record", label: "Add Record", icon: PlusCircle, href: "/dashboard", color: "bg-blue-500" },
+      { key: "scandoc", label: "Scan Doc", icon: ScanLine, href: "/accounts/scan", color: "bg-violet-500" },
       { key: "business", label: "Documents", icon: FileText, href: "/business", color: "bg-cyan-500" },
     ],
   },
