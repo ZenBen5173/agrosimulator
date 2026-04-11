@@ -456,6 +456,13 @@ export default function HomePage() {
             <div className="px-3 py-6 text-center text-xs text-gray-400">No tasks for today</div>
           ) : (
             <div>
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 text-[10px] text-gray-400 font-medium">
+                <span className="w-5" />
+                <span className="flex-1">Task</span>
+                <span>Plot</span>
+                <span className="w-8">Pri</span>
+                <span className="w-3" />
+              </div>
               {incompleteTasks.slice(0, 10).map((task) => {
                 const badge = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.normal;
                 const isExpanded = expandedTask === task.id;

@@ -183,7 +183,12 @@ export default function EquipmentPage() {
             <div className="p-3 space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
           ) : items.length === 0 ? (
             <div className="px-3 py-8 text-center text-xs text-gray-400">No equipment tracked yet</div>
-          ) : items.map((eq) => (
+          ) : (<><div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 text-[10px] text-gray-400 font-medium">
+                <span className="flex-1">Name</span>
+                <span>Condition</span>
+                <span className="w-16 text-right">Value</span>
+                <span className="w-3" />
+              </div>{items.map((eq) => (
             <div key={eq.id} className="border-b border-gray-50 last:border-0">
               <button onClick={() => setExpandedId(expandedId === eq.id ? null : eq.id)}
                 className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50/50 transition-colors text-left">
@@ -210,7 +215,7 @@ export default function EquipmentPage() {
                 )}
               </AnimatePresence>
             </div>
-          ))}
+          ))}</>)}
         </div>
       </div>
     </div>

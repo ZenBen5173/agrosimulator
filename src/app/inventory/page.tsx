@@ -203,6 +203,12 @@ export default function InventoryPage() {
             <div className="px-3 py-8 text-center text-xs text-gray-400">No inventory items yet</div>
           ) : (
             <div>
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 text-[10px] text-gray-400 font-medium">
+                <span className="flex-1">Item</span>
+                <span>Type</span>
+                <span className="w-16 text-right">Stock</span>
+                <span className="w-3" />
+              </div>
               {items.map((item) => {
                 const isLow = item.reorder_threshold && item.current_quantity <= item.reorder_threshold;
                 return (

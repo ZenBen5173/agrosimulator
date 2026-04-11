@@ -209,6 +209,13 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 text-[10px] text-gray-400 font-medium">
+                <span className="w-12">Date</span>
+                <span className="flex-1">Description</span>
+                <span>Category</span>
+                <span className="w-16 text-right">Amount</span>
+                <span className="w-3" />
+              </div>
               {recentRecords.map((r) => {
                 const isIncome = r.record_type === "income";
                 return (

@@ -230,6 +230,7 @@ export default function BusinessPage() {
                   <div className="px-3 py-2 border-b border-gray-100">
                     <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Recent Documents</span>
                   </div>
+                  <DocHeaderRow />
                   {[...salesDocs, ...purchaseDocs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((doc) => (
                     <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
                   ))}
@@ -287,9 +288,9 @@ export default function BusinessPage() {
                 </div>
                 {purchaseDocs.length === 0 ? (
                   <div className="px-3 py-6 text-center text-xs text-gray-400">No purchase documents yet</div>
-                ) : purchaseDocs.map((doc) => (
+                ) : (<><DocHeaderRow />{purchaseDocs.map((doc) => (
                   <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
-                ))}
+                ))}</>)}
               </div>
               </>
             )}
@@ -344,9 +345,9 @@ export default function BusinessPage() {
                 </div>
                 {salesDocs.length === 0 ? (
                   <div className="px-3 py-6 text-center text-xs text-gray-400">No sales documents yet</div>
-                ) : salesDocs.map((doc) => (
+                ) : (<><DocHeaderRow />{salesDocs.map((doc) => (
                   <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
-                ))}
+                ))}</>)}
               </div>
               </>
             )}
@@ -413,6 +414,20 @@ function DocRowView({ doc, formatDate, onView }: { doc: DocRow; formatDate: (d: 
       <span className="text-xs font-medium text-gray-700 flex-shrink-0 w-16 text-right">RM{doc.total_rm.toFixed(2)}</span>
       <ChevronRight size={12} className="text-gray-300 flex-shrink-0" />
     </button>
+  );
+}
+
+// ── Document Header Row ──
+function DocHeaderRow() {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 text-[10px] text-gray-400 font-medium">
+      <span className="w-8 text-center">Type</span>
+      <span className="flex-1">Number / Contact</span>
+      <span>Date</span>
+      <span className="w-14">Status</span>
+      <span className="w-16 text-right">Amount</span>
+      <span className="w-3" />
+    </div>
   );
 }
 
