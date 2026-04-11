@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { chatActionFlow } from "@/flows/chatAction";
 import { sendPushToUser } from "@/lib/pushNotify";
+import { getNextDocNumber, insertDocumentItems, updateInventoryStock } from "@/lib/business";
 
 export async function POST(request: Request) {
   try {
@@ -182,6 +183,125 @@ export async function POST(request: Request) {
             type: "create_alert",
             details: `Alert created: "${action.task_title}"`,
           };
+          break;
+        }
+
+        case "create_rfq": {
+          if (action.items && action.items.length > 0) {
+            // Find or create supplier
+            let supplierId: string | null = null;
+            if (action.supplier_name) {
+              const { data: existing } = await supabase.from("suppliers").select("id").eq("farm_id", farm_id).ilike("name", `%${action.supplier_name}%`).limit(1).single();
+              supplierId = existing?.id || null;
+            }
+
+            const rfqNumber = await getNextDocNumber(farm_id, "RFQ", "purchase_rfqs");
+            const totalRm = action.items.reduce((s, i) => s + i.quantity * i.unit_price_rm, 0);
+
+            const { data: rfq } = await supabase.from("purchase_rfqs").insert({
+              farm_id,
+              supplier_id: supplierId,
+              rfq_number: rfqNumber,
+              rfq_date: today,
+              status: "draft",
+              notes: `Created via AgroBot chat`,
+              total_rm: totalRm,
+            }).select().single();
+
+            if (rfq) {
+              await insertDocumentItems(rfq.id, "rfq", action.items.map((i) => ({
+                item_name: i.item_name,
+                quantity: i.quantity,
+                unit: i.unit,
+                unit_price_rm: i.unit_price_rm,
+              })));
+
+              actionResult = {
+                type: "create_rfq",
+                details: `RFQ drafted: ${rfqNumber} (RM${totalRm.toFixed(2)}) — [View RFQ](/business/rfq/${rfq.id})`,
+              };
+
+              // Store rfq_id in metadata so next "ok" can reference it
+              result.action!.rfq_id = rfq.id;
+            }
+          }
+          break;
+        }
+
+        case "confirm_purchase": {
+          const rfqId = action.rfq_id;
+          if (!rfqId) {
+            // Try to find the last RFQ from chat metadata
+            const { data: lastMsg } = await supabase.from("chat_messages")
+              .select("metadata")
+              .eq("farm_id", farm_id)
+              .eq("role", "assistant")
+              .order("created_at", { ascending: false })
+              .limit(5);
+
+            const foundRfqId = lastMsg?.find((m) => {
+              const meta = m.metadata as Record<string, unknown> | null;
+              return meta?.action && (meta.action as Record<string, unknown>).rfq_id;
+            });
+            const resolvedRfqId = foundRfqId ? ((foundRfqId.metadata as Record<string, unknown>).action as Record<string, unknown>).rfq_id as string : null;
+
+            if (resolvedRfqId) {
+              action.rfq_id = resolvedRfqId;
+            }
+          }
+
+          if (action.rfq_id) {
+            // Get RFQ details
+            const { data: rfq } = await supabase.from("purchase_rfqs").select("*, suppliers(name)").eq("id", action.rfq_id).single();
+            if (rfq) {
+              // Create PO from RFQ
+              const origin = new URL(request.url).origin;
+              const poRes = await fetch(`${origin}/api/purchase/orders`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
+                body: JSON.stringify({ farm_id, supplier_id: rfq.supplier_id, rfq_id: rfq.id }),
+              });
+
+              if (poRes.ok) {
+                const poData = await poRes.json();
+
+                // Create GRN from PO
+                const grnRes = await fetch(`${origin}/api/purchase/grn`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
+                  body: JSON.stringify({ farm_id, po_id: poData.id, supplier_id: rfq.supplier_id }),
+                });
+
+                let billNumber = "";
+                if (grnRes.ok) {
+                  const grnData = await grnRes.json();
+
+                  // Create Bill from GRN
+                  const billRes = await fetch(`${origin}/api/purchase/invoices`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
+                    body: JSON.stringify({ farm_id, supplier_id: rfq.supplier_id, po_id: poData.id, grn_id: grnData.id }),
+                  });
+
+                  if (billRes.ok) {
+                    const billData = await billRes.json();
+                    billNumber = billData.bill_number;
+                  }
+                }
+
+                const supplierName = (rfq.suppliers as { name: string } | null)?.name || "supplier";
+                actionResult = {
+                  type: "confirm_purchase",
+                  details: `Purchase confirmed! Created ${poData.po_number} → GRN → ${billNumber || "Bill"}. Inventory updated, expense recorded. [View PO](/business/purchase_order/${poData.id})`,
+                };
+              }
+            }
+          } else {
+            actionResult = {
+              type: "confirm_purchase",
+              details: "No pending RFQ found. Please request a restock first.",
+            };
+          }
           break;
         }
       }
