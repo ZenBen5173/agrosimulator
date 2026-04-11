@@ -168,20 +168,6 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* Sticky bottom CTA */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-        <button
-          onClick={handleEnter}
-          disabled={entering}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-3.5 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {entering ? (
-            <><Loader2 size={16} className="animate-spin" /> Entering...</>
-          ) : (
-            <>Enter App <ArrowRight size={16} /></>
-          )}
-        </button>
-      </div>
     </div>
   );
 }
