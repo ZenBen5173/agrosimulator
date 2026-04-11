@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Plus, ArrowRight } from "lucide-react";
+import { motion } from "framer-motion";
+import { ChevronRight, Plus } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { STATUS_LABELS } from "@/types/business";
@@ -17,8 +17,6 @@ export default function BusinessPage() {
   const farmId = useFarmStore((s) => s.farm?.id);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [items, setItems] = useState<{ document_id: string; item_name: string; quantity: number; unit: string; unit_price_rm: number; total_rm: number }[]>([]);
 
   // Data
   const [customers, setCustomers] = useState<{ id: string; name: string; phone: string | null; total_outstanding_rm: number }[]>([]);
@@ -71,16 +69,6 @@ export default function BusinessPage() {
   }, [farmId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-
-  // Fetch line items for expanded doc
-  const handleExpand = async (doc: DocRow) => {
-    if (expandedId === doc.id) { setExpandedId(null); return; }
-    setExpandedId(doc.id);
-    const typeMap: Record<string, string> = { RFQ: "rfq", PO: "purchase_order", GRN: "grn", Bill: "purchase_invoice", QT: "quotation", SO: "sales_order", DO: "delivery_order", INV: "sales_invoice" };
-    // Items are fetched via the document_items table — for now show from cached data or make a simple query
-    // Since we don't have a dedicated items endpoint, we'll show the total
-    setItems([]);
-  };
 
   const totalReceivable = salesDocs.filter((d) => d.type === "INV" && d.status !== "paid").reduce((s, d) => s + d.total_rm, 0);
   const totalPayable = purchaseDocs.filter((d) => d.type === "Bill" && d.status !== "paid").reduce((s, d) => s + d.total_rm, 0);
@@ -158,7 +146,7 @@ export default function BusinessPage() {
                     <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Recent Documents</span>
                   </div>
                   {[...salesDocs, ...purchaseDocs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((doc) => (
-                    <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} onView={() => viewDoc(doc)} />
+                    <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
                   ))}
                 </div>
               </>
@@ -174,7 +162,7 @@ export default function BusinessPage() {
                 {purchaseDocs.length === 0 ? (
                   <div className="px-3 py-6 text-center text-xs text-gray-400">No purchase documents yet</div>
                 ) : purchaseDocs.map((doc) => (
-                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} onView={() => viewDoc(doc)} />
+                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
                 ))}
               </div>
             )}
@@ -189,7 +177,7 @@ export default function BusinessPage() {
                 {salesDocs.length === 0 ? (
                   <div className="px-3 py-6 text-center text-xs text-gray-400">No sales documents yet</div>
                 ) : salesDocs.map((doc) => (
-                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} onView={() => viewDoc(doc)} />
+                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
                 ))}
               </div>
             )}
@@ -241,39 +229,20 @@ export default function BusinessPage() {
 }
 
 // ── Document Row Component ──
-function DocRowView({ doc, formatDate, expanded, onToggle, onView }: { doc: DocRow; formatDate: (d: string) => string; expanded: boolean; onToggle: () => void; onView: () => void }) {
+function DocRowView({ doc, formatDate, onView }: { doc: DocRow; formatDate: (d: string) => string; onView: () => void }) {
   const badge = STATUS_LABELS[doc.status] || { label: doc.status, cls: "bg-gray-100 text-gray-500" };
 
   return (
-    <div className="border-b border-gray-50 last:border-0">
-      <button onClick={onToggle} className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50/50 transition-colors text-left">
-        <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded w-8 text-center flex-shrink-0">{doc.type}</span>
-        <div className="flex-1 min-w-0">
-          <span className="text-xs text-gray-800 font-medium">{doc.number}</span>
-          <span className="text-[10px] text-gray-400 ml-1.5">{doc.contact}</span>
-        </div>
-        <span className="text-[10px] text-gray-400 flex-shrink-0">{formatDate(doc.date)}</span>
-        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${badge.cls}`}>{badge.label}</span>
-        <span className="text-xs font-medium text-gray-700 flex-shrink-0 w-16 text-right">RM{doc.total_rm.toFixed(2)}</span>
-        <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.15 }}>
-          <ChevronDown size={12} className="text-gray-300" />
-        </motion.div>
-      </button>
-      <AnimatePresence>
-        {expanded && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-            className="border-t border-gray-50 bg-gray-50/30 px-3 pb-2.5 pt-2 text-xs space-y-1.5">
-            <div className="flex justify-between"><span className="text-gray-400">Document</span><span className="text-gray-700">{doc.number}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Date</span><span className="text-gray-700">{new Date(doc.date + "T12:00:00").toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "long", year: "numeric" })}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Contact</span><span className="text-gray-700">{doc.contact}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Status</span><span className={`font-medium ${badge.cls} px-1.5 py-0.5 rounded`}>{badge.label}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Total</span><span className="text-gray-800 font-semibold">RM{doc.total_rm.toFixed(2)}</span></div>
-            <button onClick={onView} className="w-full mt-2 pt-2 border-t border-gray-200 text-[11px] text-green-600 font-medium text-left flex items-center gap-1">
-              <ArrowRight size={12} /> View full document
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <button onClick={onView} className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50/50 transition-colors text-left border-b border-gray-50 last:border-0">
+      <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded w-8 text-center flex-shrink-0">{doc.type}</span>
+      <div className="flex-1 min-w-0">
+        <span className="text-xs text-gray-800 font-medium">{doc.number}</span>
+        <span className="text-[10px] text-gray-400 ml-1.5">{doc.contact}</span>
+      </div>
+      <span className="text-[10px] text-gray-400 flex-shrink-0">{formatDate(doc.date)}</span>
+      <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${badge.cls}`}>{badge.label}</span>
+      <span className="text-xs font-medium text-gray-700 flex-shrink-0 w-16 text-right">RM{doc.total_rm.toFixed(2)}</span>
+      <ChevronRight size={12} className="text-gray-300 flex-shrink-0" />
+    </button>
   );
 }
