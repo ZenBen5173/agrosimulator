@@ -12,6 +12,7 @@ import {
   BarChart3,
   Bell,
   Settings,
+  FileText,
 } from "lucide-react";
 import { useFarmStore } from "@/stores/farmStore";
 
@@ -42,6 +43,7 @@ const FAB_GROUPS: { label: string; items: FabAction[] }[] = [
     items: [
       { key: "receipt", label: "Scan Receipt", icon: Receipt, href: "/inventory/scan", color: "bg-violet-500" },
       { key: "record", label: "Add Record", icon: PlusCircle, href: "/dashboard", color: "bg-blue-500" },
+      { key: "business", label: "Documents", icon: FileText, href: "/business", color: "bg-cyan-500" },
     ],
   },
   {
