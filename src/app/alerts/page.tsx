@@ -87,6 +87,7 @@ export default function AlertsPage() {
     <div className="min-h-screen bg-gray-50 pb-24">
       <PageHeader
         title="Farm Alerts"
+        breadcrumbs={[{ label: "Today", href: "/home" }, { label: "Alerts" }]}
         action={unread > 0 ? <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-600">{unread} new</span> : undefined}
       />
 

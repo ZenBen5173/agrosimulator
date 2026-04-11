@@ -85,7 +85,7 @@ export default function PrepListPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <PageHeader title="Prep List" />
+        <PageHeader title="Prep List" breadcrumbs={[{ label: "Today", href: "/home" }, { label: "Prep List" }]} />
         <div className="px-4 pt-4 space-y-3">
           {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 rounded-lg animate-pulse" />)}
         </div>
@@ -96,7 +96,7 @@ export default function PrepListPage() {
   if (!data) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <PageHeader title="Prep List" />
+        <PageHeader title="Prep List" breadcrumbs={[{ label: "Today", href: "/home" }, { label: "Prep List" }]} />
         <div className="px-4 pt-12 text-center text-sm text-gray-400">
           No prep list available. Make sure you have active plots.
         </div>
@@ -120,6 +120,7 @@ export default function PrepListPage() {
     <div className="min-h-screen bg-gray-50 pb-24">
       <PageHeader
         title="Prep List"
+        breadcrumbs={[{ label: "Today", href: "/home" }, { label: "Prep List" }]}
         action={<button onClick={fetchPrep} className="p-2 rounded-full hover:bg-gray-100"><RefreshCw size={16} className="text-gray-400" /></button>}
       />
 

@@ -104,6 +104,7 @@ export default function DiagnosisPage() {
     <div className="min-h-screen bg-gray-50 pb-24">
       <PageHeader
         title="Treatment Monitoring"
+        breadcrumbs={[{ label: "Today", href: "/home" }, { label: "Treatments" }]}
         action={dueToday.length > 0 ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-600">{dueToday.length} due</span> : undefined}
       />
 

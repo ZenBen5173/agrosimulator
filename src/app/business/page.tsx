@@ -145,7 +145,7 @@ export default function BusinessPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <PageHeader title="Business" />
+      <PageHeader title="Documents" breadcrumbs={[{ label: "Accounts", href: "/dashboard" }, { label: "Documents" }]} />
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 bg-white px-2">

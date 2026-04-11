@@ -71,7 +71,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" breadcrumbs={[{ label: "Home", href: "/home" }, { label: "Settings" }]} />
 
       <div className="px-4 pt-4 space-y-3">
         {/* Profile */}

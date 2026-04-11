@@ -135,7 +135,7 @@ export default function TransactionDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <PageHeader title={title} />
+        <PageHeader title={title} breadcrumbs={[{ label: "Accounts", href: "/dashboard" }, { label: "Documents", href: "/business" }, { label: title }]} />
         <div className="px-4 pt-4 space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />)}</div>
       </div>
     );
@@ -144,7 +144,7 @@ export default function TransactionDetailPage() {
   if (!txn) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <PageHeader title={title} />
+        <PageHeader title={title} breadcrumbs={[{ label: "Accounts", href: "/dashboard" }, { label: "Documents", href: "/business" }, { label: title }]} />
         <div className="px-4 pt-12 text-center text-sm text-gray-400">Transaction not found</div>
       </div>
     );
@@ -154,7 +154,7 @@ export default function TransactionDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <PageHeader title={`${title} ${txn.docNumber}`} />
+      <PageHeader title={`${title} ${txn.docNumber}`} breadcrumbs={[{ label: "Accounts", href: "/dashboard" }, { label: "Documents", href: "/business" }, { label: txn.docNumber }]} />
 
       <div className="px-4 pt-3 space-y-3">
 
