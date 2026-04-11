@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 import {
-  BarChart,
-  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -20,7 +20,6 @@ interface MonthlyData {
   month: string;
   income: number;
   expenses: number;
-  net: number;
 }
 
 export default function RevenueChart({ records }: RevenueChartProps) {
@@ -41,12 +40,10 @@ export default function RevenueChart({ records }: RevenueChartProps) {
       .map(([monthKey, data]): MonthlyData => {
         const [year, month] = monthKey.split("-");
         const date = new Date(parseInt(year), parseInt(month) - 1);
-        const label = date.toLocaleDateString("en", { month: "short" });
         return {
-          month: label,
+          month: date.toLocaleDateString("en", { month: "short" }),
           income: Math.round(data.income),
           expenses: Math.round(data.expenses),
-          net: Math.round(data.income - data.expenses),
         };
       });
   }, [records]);
@@ -62,11 +59,9 @@ export default function RevenueChart({ records }: RevenueChartProps) {
   return (
     <div className="h-48 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart
+        <LineChart
           data={monthlyData}
           margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
-          barGap={2}
-          barCategoryGap="25%"
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
           <XAxis
@@ -94,9 +89,23 @@ export default function RevenueChart({ records }: RevenueChartProps) {
               String(name) === "income" ? "Income" : "Expenses",
             ]}
           />
-          <Bar dataKey="income" fill="#22c55e" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="expenses" fill="#ef4444" radius={[3, 3, 0, 0]} />
-        </BarChart>
+          <Line
+            type="monotone"
+            dataKey="income"
+            stroke="#22c55e"
+            strokeWidth={2}
+            dot={{ r: 3, fill: "#22c55e", strokeWidth: 0 }}
+            activeDot={{ r: 5 }}
+          />
+          <Line
+            type="monotone"
+            dataKey="expenses"
+            stroke="#ef4444"
+            strokeWidth={2}
+            dot={{ r: 3, fill: "#ef4444", strokeWidth: 0 }}
+            activeDot={{ r: 5 }}
+          />
+        </LineChart>
       </ResponsiveContainer>
     </div>
   );
