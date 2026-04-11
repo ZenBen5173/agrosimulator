@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Loader2, Plus, ArrowLeft, ChevronRight } from "lucide-react";
+import { Send, Loader2, Plus, ArrowLeft, ChevronRight, Paperclip, MoreVertical } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useFarmStore } from "@/stores/farmStore";
 import toast from "react-hot-toast";
@@ -178,6 +178,15 @@ export default function ChatPage() {
             <p className="text-sm font-semibold text-gray-900 truncate">{activeThread.title}</p>
             <p className="text-[10px] text-gray-400">AgroBot AI</p>
           </div>
+          <button onClick={async () => {
+            const supabase = createClient();
+            await supabase.from("chat_threads").update({ has_unread: true }).eq("id", activeThread.id);
+            setActiveThread(null);
+            loadThreads();
+            toast("Marked as unread");
+          }} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100" title="Mark as unread">
+            <MoreVertical size={16} className="text-gray-400" />
+          </button>
         </div>
 
         {/* Messages */}
@@ -204,7 +213,7 @@ export default function ChatPage() {
                     ? "rounded-2xl rounded-br-sm bg-green-600 text-white"
                     : "rounded-2xl rounded-bl-sm bg-white text-gray-800 border border-gray-100"
                 }`}>
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  <div className="whitespace-pre-wrap"><MessageContent content={msg.content} /></div>
                   {msg.role === "assistant" && msg.metadata && Array.isArray((msg.metadata as Record<string, unknown>).used_tools) && (
                     <div className="mt-1.5 flex flex-wrap gap-1 border-t border-gray-100 pt-1.5">
                       {((msg.metadata as Record<string, unknown>).used_tools as string[]).map((tool: string) => (
@@ -232,7 +241,10 @@ export default function ChatPage() {
         </div>
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="border-t border-gray-100 bg-white px-4 py-2.5 flex gap-2" style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+        <form onSubmit={handleSubmit} className="border-t border-gray-100 bg-white px-3 py-2.5 flex items-center gap-1.5" style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+          <button type="button" onClick={() => toast("Attach file coming soon")} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 flex-shrink-0">
+            <Paperclip size={16} className="text-gray-400" />
+          </button>
           <input
             ref={inputRef}
             type="text"
@@ -243,8 +255,8 @@ export default function ChatPage() {
             disabled={sending}
           />
           <button type="submit" disabled={!input.trim() || sending}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-green-600 text-white disabled:opacity-40">
-            <Send size={16} />
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-green-600 text-white disabled:opacity-40 flex-shrink-0">
+            <Send size={14} />
           </button>
         </form>
       </div>
@@ -343,5 +355,73 @@ function ThreadRow({ thread, onSelect, timeAgo, unread }: { thread: ChatThread; 
         <ChevronRight size={14} className="text-gray-300" />
       </div>
     </button>
+  );
+}
+
+// ── Message Content with clickable links ──
+function MessageContent({ content }: { content: string }) {
+  // Parse markdown links [text](url) and document references (RQ-0001, PO-0001, etc)
+  const parts: { type: "text" | "link" | "doc"; text: string; href?: string }[] = [];
+  let remaining = content;
+
+  // Match markdown links: [text](url)
+  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = linkRegex.exec(remaining)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", text: remaining.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: "link", text: match[1], href: match[2] });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < remaining.length) {
+    const tail = remaining.slice(lastIndex);
+    // Also detect document numbers like RQ-0001, PO-0001, INV-0001 etc
+    const docRegex = /(RQ-\d{4}|PO-\d{4}|GRN-\d{4}|BILL-\d{4}|INV-\d{4}|SO-\d{4}|DO-\d{4}|QT-\d{4})/g;
+    let docLastIndex = 0;
+    let docMatch;
+    while ((docMatch = docRegex.exec(tail)) !== null) {
+      if (docMatch.index > docLastIndex) {
+        parts.push({ type: "text", text: tail.slice(docLastIndex, docMatch.index) });
+      }
+      parts.push({ type: "doc", text: docMatch[1] });
+      docLastIndex = docMatch.index + docMatch[0].length;
+    }
+    if (docLastIndex < tail.length) {
+      parts.push({ type: "text", text: tail.slice(docLastIndex) });
+    }
+  }
+
+  if (parts.length === 0) return <>{content}</>;
+
+  return (
+    <>
+      {parts.map((p, i) => {
+        if (p.type === "link") {
+          return (
+            <a key={i} href={p.href} className="text-green-600 underline font-medium" onClick={(e) => { e.preventDefault(); window.location.href = p.href!; }}>
+              {p.text}
+            </a>
+          );
+        }
+        if (p.type === "doc") {
+          // Auto-link document numbers to their detail pages
+          const prefix = p.text.split("-")[0];
+          const typeMap: Record<string, string> = { RQ: "rfq", PO: "purchase_order", GRN: "grn", BILL: "purchase_invoice", INV: "sales_invoice", SO: "sales_order", DO: "delivery_order", QT: "quotation" };
+          const docType = typeMap[prefix];
+          if (docType) {
+            return (
+              <span key={i} className="text-green-600 underline cursor-pointer font-medium" onClick={() => { /* Would need doc ID — for now just highlight */ }}>
+                {p.text}
+              </span>
+            );
+          }
+        }
+        return <span key={i}>{p.text}</span>;
+      })}
+    </>
   );
 }
