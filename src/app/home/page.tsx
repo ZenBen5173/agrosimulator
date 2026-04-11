@@ -341,7 +341,7 @@ export default function HomePage() {
           const fmt12 = (h: number) => h === now ? "Now" : h === 0 ? "12am" : h === 12 ? "12pm" : h > 12 ? `${h - 12}pm` : `${h}am`;
 
           return (
-            <button onClick={() => router.push("/weather")} className="w-full text-left rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
                 <div className="flex items-baseline gap-2">
@@ -352,7 +352,6 @@ export default function HomePage() {
                 <div className="flex items-center gap-3 text-[10px] text-gray-400">
                   <span className="flex items-center gap-1"><Droplets size={11} /> {weather.humidity_pct}%</span>
                   <span className="flex items-center gap-1"><Wind size={11} /> {weather.wind_kmh}</span>
-                  <ChevronRight size={13} className="text-gray-300" />
                 </div>
               </div>
 
@@ -394,7 +393,12 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-            </button>
+
+              {/* Link to full weather page */}
+              <button onClick={() => router.push("/weather")} className="w-full px-3 py-2 text-[11px] text-green-600 font-medium text-left border-t border-gray-100 hover:bg-gray-50">
+                View full forecast and spray conditions
+              </button>
+            </div>
           );
         })()}
 
