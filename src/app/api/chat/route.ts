@@ -6,7 +6,7 @@ import { getNextDocNumber, insertDocumentItems, updateInventoryStock } from "@/l
 
 export async function POST(request: Request) {
   try {
-    const { farm_id, message } = await request.json();
+    const { farm_id, message, thread_id } = await request.json();
 
     if (!farm_id || !message) {
       return NextResponse.json(
@@ -61,13 +61,15 @@ export async function POST(request: Request) {
       .order("priority")
       .limit(10);
 
-    // Fetch chat history
-    const { data: chatHistory } = await supabase
+    // Fetch chat history (filtered by thread if provided)
+    let historyQuery = supabase
       .from("chat_messages")
       .select("role, content")
       .eq("farm_id", farm_id)
       .order("created_at", { ascending: true })
       .limit(10);
+    if (thread_id) historyQuery = historyQuery.eq("thread_id", thread_id);
+    const { data: chatHistory } = await historyQuery;
 
     // Build context
     const contextParts: string[] = [];
@@ -310,6 +312,7 @@ export async function POST(request: Request) {
     // Save messages to chat_messages
     await supabase.from("chat_messages").insert({
       farm_id,
+      thread_id: thread_id || null,
       role: "user",
       content: message,
     });
@@ -320,6 +323,7 @@ export async function POST(request: Request) {
 
     await supabase.from("chat_messages").insert({
       farm_id,
+      thread_id: thread_id || null,
       role: "assistant",
       content: replyWithAction,
       metadata: {
@@ -328,6 +332,24 @@ export async function POST(request: Request) {
         action_result: actionResult,
       },
     });
+
+    // Update thread last_message + auto-title on first message
+    if (thread_id) {
+      const preview = replyWithAction.split("\n")[0].slice(0, 100);
+      await supabase.from("chat_threads").update({
+        last_message: preview,
+        last_message_at: new Date().toISOString(),
+      }).eq("id", thread_id);
+
+      // Auto-title: if thread title is still "New Chat", generate one from the message
+      const { data: thread } = await supabase.from("chat_threads").select("title").eq("id", thread_id).single();
+      if (thread && thread.title === "New Chat") {
+        // Simple title: first 5 words of user message
+        const words = message.split(/\s+/).slice(0, 5).join(" ");
+        const title = words.length > 30 ? words.slice(0, 30) + "..." : words;
+        await supabase.from("chat_threads").update({ title }).eq("id", thread_id);
+      }
+    }
 
     return NextResponse.json({
       reply: replyWithAction,
@@ -364,12 +386,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data: messages, error } = await supabase
+    const thread_id = searchParams.get("thread_id");
+
+    let query = supabase
       .from("chat_messages")
-      .select("id, farm_id, role, content, metadata, created_at")
+      .select("id, farm_id, thread_id, role, content, metadata, created_at")
       .eq("farm_id", farm_id)
       .order("created_at", { ascending: true })
       .limit(50);
+    if (thread_id) query = query.eq("thread_id", thread_id);
+
+    const { data: messages, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: "Failed to fetch messages" }, { status: 500 });

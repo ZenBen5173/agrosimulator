@@ -48,9 +48,20 @@ export interface TaskData {
   plot_label?: string;
 }
 
+export interface ChatThread {
+  id: string;
+  farm_id: string;
+  title: string;
+  last_message: string | null;
+  last_message_at: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface ChatMessage {
   id: string;
   farm_id: string;
+  thread_id?: string | null;
   role: "user" | "assistant";
   content: string;
   metadata?: Record<string, unknown>;
