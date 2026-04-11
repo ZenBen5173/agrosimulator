@@ -156,15 +156,15 @@ export default function InventoryDetailPage() {
   }
 
   const isLow = item.reorder_threshold && item.current_quantity <= item.reorder_threshold;
-  const totalIn = movements.filter((m) => m.movement_type === "purchase" || m.movement_type === "adjustment").reduce((s, m) => s + m.quantity, 0);
-  const totalOut = movements.filter((m) => m.movement_type === "usage" || m.movement_type === "wastage").reduce((s, m) => s + m.quantity, 0);
+  const totalIn = Math.round(movements.filter((m) => m.movement_type === "purchase" || m.movement_type === "adjustment").reduce((s, m) => s + m.quantity, 0) * 100) / 100;
+  const totalOut = Math.round(movements.filter((m) => m.movement_type === "usage" || m.movement_type === "wastage").reduce((s, m) => s + m.quantity, 0) * 100) / 100;
 
   // Running balance for movements
   let balance = item.current_quantity;
   const movementsWithBalance = movements.map((m) => {
-    const row = { ...m, balance };
+    const row = { ...m, balance: Math.round(balance * 100) / 100 };
     if (m.movement_type === "purchase" || m.movement_type === "adjustment") {
-      balance -= m.quantity; // reverse — going back in time
+      balance -= m.quantity;
     } else {
       balance += m.quantity;
     }
