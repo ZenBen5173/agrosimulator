@@ -329,7 +329,7 @@ export default function HomePage() {
                 <div className="flex px-3 pb-1 min-w-max">
                   {upcoming.map((h) => (
                     <div key={h.hour} className="flex flex-col items-center w-10 flex-shrink-0">
-                      <span className="text-[9px] text-gray-400">{h.hour === now ? "Now" : `${h.hour}:00`}</span>
+                      <span className="text-[9px] text-gray-400">{h.hour === now ? "Now" : h.hour === 0 ? "12am" : h.hour === 12 ? "12pm" : h.hour > 12 ? `${h.hour - 12}pm` : `${h.hour}am`}</span>
                       <span className="text-[11px] font-semibold text-gray-700 my-0.5">{h.temp}&deg;</span>
                       {h.rain > 20 && (
                         <span className="text-[8px] text-blue-400">{h.rain}%</span>

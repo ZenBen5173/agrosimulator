@@ -63,19 +63,19 @@ const profiles = cropProfiles as CropProfiles;
 // Average prices for cost estimation (RM)
 const COST_PER_LITRE_WATER = 0.002; // piped/pump cost
 const COST_PER_G_FERTILIZER: Record<string, number> = {
-  "NPK 15-15-15": 0.003,
-  "NPK 12-12-17": 0.0035,
-  "Urea (46-0-0)": 0.002,
-  "MOP (0-0-60)": 0.004,
+  "Baja Hijau (NPK 15-15-15)": 0.003,
+  "Baja Bunga (NPK 12-12-17)": 0.0035,
+  "Baja Urea 46%": 0.002,
+  "Baja MOP Potash": 0.004,
 };
 const COST_PER_ML_PESTICIDE: Record<string, number> = {
-  Chlorpyrifos: 0.05,
-  Mancozeb: 0.03,
-  Propiconazole: 0.08,
-  Imidacloprid: 0.06,
-  "Copper hydroxide": 0.04,
-  Carbendazim: 0.05,
-  "Bacillus thuringiensis": 0.07,
+  "Lorsban (Chlorpyrifos)": 0.05,
+  "Dithane M-45 (Mancozeb)": 0.03,
+  "Tilt (Propiconazole)": 0.08,
+  "Confidor (Imidacloprid)": 0.06,
+  "Kocide (Copper Hydroxide)": 0.04,
+  "Derosal (Carbendazim)": 0.05,
+  "Dipel (Bt Spray)": 0.07,
 };
 
 /**
