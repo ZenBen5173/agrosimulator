@@ -115,6 +115,14 @@ body {
   }
 }
 
+/* Print styles — hide app chrome, show only document */
+@media print {
+  nav, .print\:hidden, header { display: none !important; }
+  body { background: white !important; }
+  .pb-24 { padding-bottom: 0 !important; }
+  @page { size: A4; margin: 10mm; }
+}
+
 /* Premium card hover/active states */
 .card-press {
   transition: transform 0.15s ease, box-shadow 0.15s ease;

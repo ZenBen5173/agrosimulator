@@ -102,6 +102,12 @@ export default function BusinessPage() {
 
   const formatDate = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "short" });
 
+  const DOC_TYPE_URL: Record<string, string> = {
+    QT: "quotation", SO: "sales_order", DO: "delivery_order", INV: "sales_invoice",
+    RFQ: "rfq", PO: "purchase_order", GRN: "grn", Bill: "purchase_invoice",
+  };
+  const viewDoc = (doc: DocRow) => router.push(`/documents/${DOC_TYPE_URL[doc.type] || doc.type}/${doc.id}`);
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <PageHeader title="Business" />
@@ -152,7 +158,7 @@ export default function BusinessPage() {
                     <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Recent Documents</span>
                   </div>
                   {[...salesDocs, ...purchaseDocs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((doc) => (
-                    <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} />
+                    <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} onView={() => viewDoc(doc)} />
                   ))}
                 </div>
               </>
@@ -168,7 +174,7 @@ export default function BusinessPage() {
                 {purchaseDocs.length === 0 ? (
                   <div className="px-3 py-6 text-center text-xs text-gray-400">No purchase documents yet</div>
                 ) : purchaseDocs.map((doc) => (
-                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} />
+                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} onView={() => viewDoc(doc)} />
                 ))}
               </div>
             )}
@@ -183,7 +189,7 @@ export default function BusinessPage() {
                 {salesDocs.length === 0 ? (
                   <div className="px-3 py-6 text-center text-xs text-gray-400">No sales documents yet</div>
                 ) : salesDocs.map((doc) => (
-                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} />
+                  <DocRowView key={doc.id} doc={doc} formatDate={formatDate} expanded={expandedId === doc.id} onToggle={() => handleExpand(doc)} onView={() => viewDoc(doc)} />
                 ))}
               </div>
             )}
@@ -235,7 +241,7 @@ export default function BusinessPage() {
 }
 
 // ── Document Row Component ──
-function DocRowView({ doc, formatDate, expanded, onToggle }: { doc: DocRow; formatDate: (d: string) => string; expanded: boolean; onToggle: () => void }) {
+function DocRowView({ doc, formatDate, expanded, onToggle, onView }: { doc: DocRow; formatDate: (d: string) => string; expanded: boolean; onToggle: () => void; onView: () => void }) {
   const badge = STATUS_LABELS[doc.status] || { label: doc.status, cls: "bg-gray-100 text-gray-500" };
 
   return (
@@ -262,6 +268,9 @@ function DocRowView({ doc, formatDate, expanded, onToggle }: { doc: DocRow; form
             <div className="flex justify-between"><span className="text-gray-400">Contact</span><span className="text-gray-700">{doc.contact}</span></div>
             <div className="flex justify-between"><span className="text-gray-400">Status</span><span className={`font-medium ${badge.cls} px-1.5 py-0.5 rounded`}>{badge.label}</span></div>
             <div className="flex justify-between"><span className="text-gray-400">Total</span><span className="text-gray-800 font-semibold">RM{doc.total_rm.toFixed(2)}</span></div>
+            <button onClick={onView} className="w-full mt-2 pt-2 border-t border-gray-200 text-[11px] text-green-600 font-medium text-left flex items-center gap-1">
+              <ArrowRight size={12} /> View full document
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
