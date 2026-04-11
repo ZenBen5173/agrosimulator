@@ -521,18 +521,20 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* ── Active Treatments ── */}
-        {treatments.length > 0 && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50/50 overflow-hidden">
-            <div className="px-3 py-2 border-b border-amber-200 flex items-center gap-1.5">
+        {/* ── Follow-ups (treatments + unread chats + pending docs) ── */}
+        {(treatments.length > 0 || alerts.length > 0) && (
+          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-1.5">
               <Clock size={13} className="text-amber-500" />
-              <span className="text-[10px] font-semibold text-amber-600 uppercase tracking-wider">Follow-up Due</span>
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Follow-ups</span>
             </div>
+
+            {/* Treatment follow-ups */}
             {treatments.map((t) => (
-              <div key={t.id} className="px-3 py-2.5 border-b border-amber-100 last:border-0">
-                <div className="flex items-center justify-between mb-2">
+              <div key={t.id} className="px-3 py-2.5 border-b border-gray-50 last:border-0">
+                <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-medium text-gray-800">{t.plots?.label}: {t.diagnosis_name || "Treatment check"}</span>
-                  <span className="text-[10px] text-gray-400">{t.plots?.crop_name}</span>
+                  <span className="text-[9px] text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded font-medium">Treatment</span>
                 </div>
                 <div className="flex gap-1.5">
                   {(["better", "same", "worse"] as const).map((status) => {
@@ -547,6 +549,18 @@ export default function HomePage() {
                   })}
                 </div>
               </div>
+            ))}
+
+            {/* Alert follow-ups as navigable items */}
+            {alerts.slice(0, 2).map((alert) => (
+              <button key={alert.id} onClick={() => router.push("/alerts")}
+                className="w-full px-3 py-2.5 border-b border-gray-50 last:border-0 flex items-center justify-between hover:bg-gray-50/50 text-left">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-800 truncate">{alert.title}</p>
+                  <p className="text-[10px] text-gray-400 truncate mt-0.5">{alert.recommended_action || alert.summary}</p>
+                </div>
+                <span className="text-[9px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded font-medium flex-shrink-0 ml-2">Alert</span>
+              </button>
             ))}
           </div>
         )}
