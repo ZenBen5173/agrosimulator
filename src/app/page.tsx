@@ -1,115 +1,186 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  CalendarCheck,
+  MessageCircle,
+  ScanLine,
+  FileText,
+  Sparkles,
+  ArrowRight,
+  Loader2,
+} from "lucide-react";
 
-export default function WelcomePage() {
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+const FEATURES = [
+  {
+    icon: CalendarCheck,
+    title: "Morning Briefing",
+    desc: "Tasks, prep list, weather, and alerts — everything before you leave home.",
+  },
+  {
+    icon: MessageCircle,
+    title: "AI Chat-to-Action",
+    desc: "Tell the AI what you need. It creates tasks, orders supplies, and updates records.",
+  },
+  {
+    icon: ScanLine,
+    title: "Scan Any Document",
+    desc: "Photo a receipt or bill. AI reads it, updates inventory, files the expense.",
+  },
+  {
+    icon: FileText,
+    title: "Full Business Suite",
+    desc: "Sales orders, invoices, inventory, equipment, depreciation — like AutoCount but AI-powered.",
+  },
+];
+
+const TECH = ["Gemini 2.0", "Firebase Genkit", "Supabase", "Next.js 16", "Vercel"];
+
+export default function LandingPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [entering, setEntering] = useState(false);
+  const [error, setError] = useState("");
 
-  async function handleSendOTP(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed || !trimmed.includes("@")) {
-      setError("Please enter a valid email address");
-      return;
-    }
-
-    setLoading(true);
-
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: trimmed,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) router.replace("/home");
     });
+  }, [router]);
 
-    setLoading(false);
-
-    if (otpError) {
-      setError(otpError.message);
-      return;
+  const handleEnter = async () => {
+    setEntering(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/dev-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "demo@agrosim.app" }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); setEntering(false); return; }
+      router.push(data.callbackUrl);
+    } catch {
+      setError("Failed to connect. Please try again.");
+      setEntering(false);
     }
-
-    router.push(`/auth/verify?email=${encodeURIComponent(trimmed)}`);
-  }
+  };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-green-50 px-4">
-      <div className="w-full max-w-sm space-y-8 text-center">
-        {/* Logo */}
-        <div>
-          <h1 className="text-4xl font-bold text-green-800">AgroSim</h1>
-          <p className="mt-3 text-lg text-green-700">
-            Your AI farm advisor, built for Malaysian farmers
-          </p>
+    <div className="min-h-screen bg-white">
+      {/* Hero */}
+      <div className="px-6 pt-16 pb-8">
+        <div className="flex items-center gap-2 mb-6">
+          <Sparkles size={20} className="text-green-600" />
+          <span className="text-[10px] font-semibold text-green-600 uppercase tracking-widest">AI-Powered Farm Management</span>
         </div>
 
-        {/* Email Form */}
-        <form onSubmit={handleSendOTP} className="space-y-4">
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-left text-sm font-medium text-gray-700"
-            >
-              Email Address
-            </label>
-            <input
-              id="email"
-              type="email"
-              placeholder="farmer@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-4 text-lg outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
-              autoComplete="email"
-            />
-          </div>
+        <h1 className="text-4xl font-bold text-gray-900 leading-tight">
+          AgroSim
+        </h1>
+        <p className="text-lg text-gray-500 mt-2 leading-relaxed">
+          Built for Malaysian smallholder farmers.
+        </p>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+        <p className="text-sm text-gray-400 mt-4 leading-relaxed">
+          Replace your notebook, receipt box, weather app, and spreadsheet — all in one AI-powered app.
+        </p>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-green-600 py-4 text-lg font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-green-400"
-          >
-            {loading ? "Sending..." : "Send OTP"}
-          </button>
-        </form>
-
-        {/* Instant login (bypasses email OTP — for demo) */}
         <button
-            onClick={async () => {
-              const trimmed = email.trim().toLowerCase();
-              if (!trimmed || !trimmed.includes("@")) {
-                setError("Enter an email first");
-                return;
-              }
-              setLoading(true);
-              setError("");
-              const res = await fetch("/api/auth/dev-login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: trimmed }),
-              });
-              const data = await res.json();
-              setLoading(false);
-              if (data.error) {
-                setError(data.error);
-                return;
-              }
-              router.push(data.callbackUrl);
-            }}
-            disabled={loading}
-            className="w-full rounded-lg border border-dashed border-gray-400 py-3 text-sm text-gray-500 hover:bg-gray-100"
-          >
-            Instant Login (skip email)
-          </button>
+          onClick={handleEnter}
+          disabled={entering}
+          className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white disabled:opacity-60 transition-all hover:bg-gray-800"
+        >
+          {entering ? (
+            <><Loader2 size={16} className="animate-spin" /> Entering...</>
+          ) : (
+            <>Enter App <ArrowRight size={16} /></>
+          )}
+        </button>
+
+        {error && <p className="mt-3 text-xs text-red-500 text-center">{error}</p>}
+      </div>
+
+      {/* Divider */}
+      <div className="mx-6 border-t border-gray-100" />
+
+      {/* Features */}
+      <div className="px-6 py-8 space-y-4">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">What You Get</p>
+
+        {FEATURES.map((f) => {
+          const Icon = f.icon;
+          return (
+            <div key={f.title} className="flex gap-3">
+              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-50 flex items-center justify-center">
+                <Icon size={18} className="text-gray-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800">{f.title}</p>
+                <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{f.desc}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Stats */}
+      <div className="mx-6 rounded-lg border border-gray-200 overflow-hidden">
+        <div className="grid grid-cols-4 divide-x divide-gray-100">
+          {[
+            { value: "7", label: "AI Flows" },
+            { value: "8", label: "Tools" },
+            { value: "56", label: "APIs" },
+            { value: "37+", label: "Tables" },
+          ].map((s) => (
+            <div key={s.label} className="px-2 py-3 text-center">
+              <p className="text-sm font-bold text-gray-800">{s.value}</p>
+              <p className="text-[9px] text-gray-400">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tech stack */}
+      <div className="px-6 py-6">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Built With</p>
+        <div className="flex flex-wrap gap-1.5">
+          {TECH.map((t) => (
+            <span key={t} className="text-[10px] text-gray-500 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-full">
+              {t}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Hackathon badge */}
+      <div className="px-6 pb-8">
+        <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-center">
+          <p className="text-[10px] text-gray-400">
+            Project 2030: MyAI Future Hackathon — Track 1: Padi &amp; Plates
+          </p>
+          <p className="text-[10px] text-gray-400 mt-0.5">
+            Team: Ben (Dev) &amp; Jeanette (Pitch)
+          </p>
+        </div>
+      </div>
+
+      {/* Sticky bottom CTA */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+        <button
+          onClick={handleEnter}
+          disabled={entering}
+          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-3.5 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {entering ? (
+            <><Loader2 size={16} className="animate-spin" /> Entering...</>
+          ) : (
+            <>Enter App <ArrowRight size={16} /></>
+          )}
+        </button>
       </div>
     </div>
   );
