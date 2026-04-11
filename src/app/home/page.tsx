@@ -585,27 +585,26 @@ export default function HomePage() {
         )}
 
         {/* ── Quick Links ── */}
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-100">
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Quick Links</span>
-          </div>
-          {[
-            { label: "Scan Document", desc: "Photo a bill or receipt", href: "/accounts/scan" },
-            { label: "Market Prices", desc: "Current crop and supply prices", href: "/market" },
-            { label: "Alerts Feed", desc: "Farm warnings and advisories", href: "/alerts" },
-            { label: "Inventory", desc: "Stock levels and reorder", href: "/inventory" },
-            { label: "Documents", desc: "Sales orders, invoices, POs", href: "/business" },
-            { label: "Activity Log", desc: "Recent farm events", href: "/activity" },
-          ].map((link) => (
-            <button key={link.label} onClick={() => router.push(link.href)}
-              className="w-full flex items-center justify-between px-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 text-left">
-              <div>
+        <div>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick Links</p>
+          <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
+            {[
+              { label: "Scan Doc", desc: "Photo a bill", href: "/accounts/scan" },
+              { label: "Market", desc: "Crop prices", href: "/market" },
+              { label: "Alerts", desc: "Warnings", href: "/alerts" },
+              { label: "Inventory", desc: "Stock levels", href: "/inventory" },
+              { label: "Documents", desc: "SO, PO, INV", href: "/business" },
+              { label: "Activity", desc: "Farm events", href: "/activity" },
+              { label: "Equipment", desc: "Depreciation", href: "/equipment" },
+              { label: "Weather", desc: "Full forecast", href: "/weather" },
+            ].map((link) => (
+              <button key={link.label} onClick={() => router.push(link.href)}
+                className="flex-shrink-0 w-24 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:bg-gray-50 transition-colors">
                 <p className="text-xs font-medium text-gray-800">{link.label}</p>
-                <p className="text-[10px] text-gray-400">{link.desc}</p>
-              </div>
-              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-            </button>
-          ))}
+                <p className="text-[10px] text-gray-400 mt-0.5">{link.desc}</p>
+              </button>
+            ))}
+          </div>
         </div>
 
       </div>
