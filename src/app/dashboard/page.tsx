@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, Camera } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { createClient } from "@/lib/supabase/client";
@@ -110,9 +110,14 @@ export default function DashboardPage() {
         title="Accounts Overview"
         hideBack
         action={
-          <button onClick={() => setSheetOpen(true)} className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
-            <Plus size={14} /> Add Record
-          </button>
+          <div className="flex gap-1.5">
+            <button onClick={() => router.push("/accounts/scan")} className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
+              <Camera size={14} /> Scan Doc
+            </button>
+            <button onClick={() => setSheetOpen(true)} className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg">
+              <Plus size={14} /> Manual
+            </button>
+          </div>
         }
       />
 
