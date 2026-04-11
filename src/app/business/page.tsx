@@ -94,7 +94,7 @@ export default function BusinessPage() {
     QT: "quotation", SO: "sales_order", DO: "delivery_order", INV: "sales_invoice",
     RFQ: "rfq", PO: "purchase_order", GRN: "grn", Bill: "purchase_invoice",
   };
-  const viewDoc = (doc: DocRow) => router.push(`/documents/${DOC_TYPE_URL[doc.type] || doc.type}/${doc.id}`);
+  const viewDoc = (doc: DocRow) => router.push(`/business/${DOC_TYPE_URL[doc.type] || doc.type}/${doc.id}`);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
