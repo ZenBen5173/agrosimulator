@@ -8,18 +8,13 @@ import {
   ChevronRight,
   AlertTriangle,
   AlertCircle,
-  Thermometer,
   Wind,
   Droplets,
-  Sun,
   Clock,
   ThumbsUp,
   Minus,
   ThumbsDown,
-  Bell,
   Package,
-  BarChart3,
-  Activity,
   ChevronDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -99,22 +94,6 @@ const PRIORITY_BADGE: Record<string, { label: string; cls: string }> = {
   normal: { label: "NRM", cls: "bg-amber-50 text-amber-600" },
   low: { label: "LOW", cls: "bg-gray-100 text-gray-500" },
 };
-
-// ── Gauge bar component ──
-
-function Gauge({ value, max, color, label, icon: Icon }: { value: number; max: number; color: string; label: string; icon: typeof Thermometer }) {
-  const pct = Math.min(100, (value / max) * 100);
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <Icon size={13} className="text-gray-400 flex-shrink-0" />
-      <span className="w-14 text-gray-500 truncate">{label}</span>
-      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="w-8 text-right font-medium text-gray-700">{value}</span>
-    </div>
-  );
-}
 
 // ── Main ──
 
@@ -297,44 +276,95 @@ export default function HomePage() {
           </button>
         )}
 
-        {/* ── Weather — Today Only ── */}
-        {weather && (
-          <button onClick={() => router.push("/weather")} className="w-full text-left rounded-lg border border-gray-200 bg-white p-3">
-            <div className="flex items-center justify-between mb-2.5">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Today&apos;s Weather</span>
-              <ChevronRight size={14} className="text-gray-300" />
-            </div>
-            <div className="flex items-start gap-4">
-              {/* Left: temp + condition */}
-              <div>
-                <p className="text-3xl font-bold text-gray-900 leading-none">{weather.temp_celsius}&deg;</p>
-                <p className="text-xs text-gray-500 mt-1">{CONDITION_LABEL[weather.condition] || weather.condition}</p>
-                {weather.rainfall_mm > 0 && (
-                  <p className="text-[10px] text-blue-500 mt-0.5">{weather.rainfall_mm}mm rain</p>
-                )}
-              </div>
-              {/* Right: gauges */}
-              <div className="flex-1 space-y-1.5">
-                <Gauge value={weather.humidity_pct} max={100} color="bg-blue-400" label="Humidity" icon={Droplets} />
-                <Gauge value={weather.wind_kmh} max={40} color="bg-teal-400" label="Wind" icon={Wind} />
-                {(weather as WeatherData).uv_index !== undefined && (
-                  <Gauge value={(weather as WeatherData).uv_index!} max={11} color="bg-amber-400" label="UV" icon={Sun} />
-                )}
-              </div>
-            </div>
-            {/* Today's conditions summary */}
-            {weather.forecast && weather.forecast.length > 0 && (() => {
-              const todayForecast = weather.forecast[0];
-              return todayForecast ? (
-                <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
-                  <span>Today: {todayForecast.temp_min}&deg;&ndash;{todayForecast.temp_max}&deg;C</span>
-                  <span>{todayForecast.rain_chance}% rain chance</span>
-                  <span className="text-green-600 font-medium">Details &rarr;</span>
+        {/* ── Weather — Today Hourly ── */}
+        {weather && (() => {
+          // Generate hourly data for today using tropical temperature curve
+          const baseTemp = weather.temp_celsius;
+          const hours = Array.from({ length: 24 }, (_, h) => {
+            // Tropical temp curve: coolest 5-6am, hottest 1-2pm
+            const curve = Math.sin(((h - 5) / 24) * Math.PI * 2) * 0.4 + 0.1;
+            const temp = Math.round(baseTemp + curve * 6 - 3);
+            // Rain probability: higher 14:00-18:00 in tropics
+            const rainBase = weather.condition === "rainy" ? 60 : weather.condition === "thunderstorm" ? 80 : 10;
+            const afternoonBoost = h >= 14 && h <= 18 ? 25 : 0;
+            const rain = Math.min(100, Math.max(0, rainBase + afternoonBoost + Math.round((Math.sin(h * 0.7) * 15))));
+            return { hour: h, temp, rain };
+          });
+          const now = new Date().getHours();
+          const upcoming = hours.slice(now, Math.min(now + 12, 24));
+          const temps = upcoming.map((h) => h.temp);
+          const minT = Math.min(...temps);
+          const maxT = Math.max(...temps);
+          const range = maxT - minT || 1;
+
+          // SVG temperature curve
+          const svgW = 280;
+          const svgH = 40;
+          const points = upcoming.map((h, i) => {
+            const x = (i / (upcoming.length - 1)) * svgW;
+            const y = svgH - ((h.temp - minT) / range) * (svgH - 8) - 4;
+            return `${x},${y}`;
+          }).join(" ");
+
+          return (
+            <button onClick={() => router.push("/weather")} className="w-full text-left rounded-lg border border-gray-200 bg-white overflow-hidden">
+              {/* Header row */}
+              <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-gray-900">{weather.temp_celsius}&deg;</span>
+                  <span className="text-xs text-gray-500">{CONDITION_LABEL[weather.condition] || weather.condition}</span>
+                  {weather.rainfall_mm > 0 && (
+                    <span className="text-[10px] text-blue-500">{weather.rainfall_mm}mm</span>
+                  )}
                 </div>
-              ) : null;
-            })()}
-          </button>
-        )}
+                <div className="flex items-center gap-3 text-[10px] text-gray-400">
+                  <span className="flex items-center gap-1"><Droplets size={11} /> {weather.humidity_pct}%</span>
+                  <span className="flex items-center gap-1"><Wind size={11} /> {weather.wind_kmh}</span>
+                  <ChevronRight size={13} className="text-gray-300" />
+                </div>
+              </div>
+
+              {/* Hourly scroll strip */}
+              <div className="overflow-x-auto no-scrollbar">
+                <div className="flex px-3 pb-1 min-w-max">
+                  {upcoming.map((h) => (
+                    <div key={h.hour} className="flex flex-col items-center w-10 flex-shrink-0">
+                      <span className="text-[9px] text-gray-400">{h.hour === now ? "Now" : `${h.hour}:00`}</span>
+                      <span className="text-[11px] font-semibold text-gray-700 my-0.5">{h.temp}&deg;</span>
+                      {h.rain > 20 && (
+                        <span className="text-[8px] text-blue-400">{h.rain}%</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Temperature curve */}
+              <div className="px-3 pb-2">
+                <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-8" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="tempGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <polygon
+                    points={`0,${svgH} ${points} ${svgW},${svgH}`}
+                    fill="url(#tempGrad)"
+                  />
+                  <polyline
+                    points={points}
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+            </button>
+          );
+        })()}
 
         {/* ── Resources Needed Today ── */}
         {resourceRows.length > 0 && (
@@ -497,24 +527,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* ── Quick Links ── */}
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
-          {[
-            { label: "Market Prices", icon: BarChart3, href: "/market", cls: "text-indigo-600 bg-indigo-50 border-indigo-100" },
-            { label: "All Alerts", icon: Bell, href: "/alerts", cls: "text-red-600 bg-red-50 border-red-100" },
-            { label: "Activity", icon: Activity, href: "/activity", cls: "text-gray-600 bg-gray-50 border-gray-200" },
-            { label: "Inventory", icon: Package, href: "/inventory", cls: "text-purple-600 bg-purple-50 border-purple-100" },
-          ].map((link) => {
-            const Icon = link.icon;
-            return (
-              <button key={link.label} onClick={() => router.push(link.href)}
-                className={`flex-shrink-0 flex items-center gap-1.5 rounded-lg border ${link.cls} px-3 py-2`}>
-                <Icon size={13} />
-                <span className="text-[11px] font-medium whitespace-nowrap">{link.label}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
     </div>
   );
