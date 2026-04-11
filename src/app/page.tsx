@@ -163,7 +163,7 @@ export default function LandingPage() {
             Project 2030: MyAI Future Hackathon — Track 1: Padi &amp; Plates
           </p>
           <p className="text-[10px] text-gray-400 mt-0.5">
-            Team: Ben (Dev) &amp; Jeanette (Pitch)
+            Teo Zen Ben (Dev) &amp; Jeanette Tan En Jie (Pitch)
           </p>
         </div>
       </div>

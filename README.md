@@ -110,8 +110,8 @@ Client (React + PixiJS + Zustand)
 
 ## Team
 
-- **Ben** — Development
-- **Jeanette** — Pitch & Presentation
+- **Teo Zen Ben** — Development
+- **Jeanette Tan En Jie** — Pitch & Presentation
 
 ## Live Demo
 
