@@ -39,21 +39,16 @@ export default function BottomTabBar() {
       <button
         key={tab.key}
         onClick={() => router.push(tab.href)}
-        className="relative flex flex-1 flex-col items-center justify-center gap-0.5"
+        className="relative flex flex-1 flex-col items-center justify-center gap-1 py-1"
       >
-        {isActive && (
-          <motion.div
-            layoutId="tab-indicator"
-            className="absolute -top-px left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-green-600"
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        <div className={`flex items-center justify-center w-10 h-7 rounded-full transition-colors ${isActive ? "bg-green-50" : ""}`}>
+          <Icon
+            size={18}
+            className={isActive ? "text-green-600" : "text-gray-400 transition-colors"}
+            strokeWidth={isActive ? 2.2 : 1.6}
           />
-        )}
-        <Icon
-          size={20}
-          className={isActive ? "text-green-600" : "text-gray-400 transition-colors"}
-          strokeWidth={isActive ? 2.5 : 1.8}
-        />
-        <span className={`text-[10px] font-medium ${isActive ? "text-green-600" : "text-gray-400"}`}>
+        </div>
+        <span className={`text-[10px] leading-none ${isActive ? "text-green-600 font-semibold" : "text-gray-400 font-medium"}`}>
           {tab.label}
         </span>
       </button>
@@ -62,10 +57,10 @@ export default function BottomTabBar() {
 
   return (
     <nav
-      className="fixed right-0 bottom-0 left-0 z-40 border-t border-gray-100 bg-white/80 backdrop-blur-xl"
+      className="fixed right-0 bottom-0 left-0 z-40 bg-white border-t border-gray-200"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="flex h-14 items-center justify-around">
+      <div className="flex h-16 items-center justify-around px-2">
         {LEFT_TABS.map(renderTab)}
 
         {/* Center FAB */}
@@ -75,16 +70,11 @@ export default function BottomTabBar() {
             aria-label="Quick actions"
             aria-haspopup="true"
             aria-expanded={fabOpen}
-            className={`absolute -top-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-600 shadow-lg shadow-green-600/30 transition-shadow hover:shadow-xl ${
-              fabOpen ? "z-50" : ""
+            className={`absolute -top-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-900 shadow-md transition-all hover:bg-gray-800 ${
+              fabOpen ? "z-50 rotate-45" : ""
             }`}
           >
-            <motion.div
-              animate={{ rotate: fabOpen ? 45 : 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            >
-              <Plus size={26} className="text-white" strokeWidth={2.5} />
-            </motion.div>
+            <Plus size={22} className="text-white" strokeWidth={2} />
           </motion.button>
         </div>
 
