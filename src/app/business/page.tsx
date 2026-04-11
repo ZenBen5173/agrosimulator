@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { ChevronRight, Plus } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronRight, ChevronDown, Plus } from "lucide-react";
+import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { STATUS_LABELS } from "@/types/business";
@@ -17,6 +18,7 @@ export default function BusinessPage() {
   const farmId = useFarmStore((s) => s.farm?.id);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
+  const [chartsOpen, setChartsOpen] = useState(false);
 
   // Data
   const [customers, setCustomers] = useState<{ id: string; name: string; phone: string | null; total_outstanding_rm: number }[]>([]);
@@ -81,6 +83,51 @@ export default function BusinessPage() {
   const overdueInv = salesDocs.filter((d) => d.type === "INV" && d.status === "unpaid");
   if (overdueInv.length > 0) summaryParts.push(`${overdueInv.length} unpaid invoice${overdueInv.length > 1 ? "s" : ""}`);
 
+  // Chart data
+  const CHART_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
+
+  // Purchase breakdown by status
+  const purchaseByStatus = purchaseDocs.reduce((acc, d) => {
+    acc[d.status] = (acc[d.status] || 0) + d.total_rm;
+    return acc;
+  }, {} as Record<string, number>);
+  const purchasePieData = Object.entries(purchaseByStatus).map(([name, value]) => ({ name, value: Math.round(value) }));
+
+  // Sales breakdown by status
+  const salesByStatus = salesDocs.reduce((acc, d) => {
+    acc[d.status] = (acc[d.status] || 0) + d.total_rm;
+    return acc;
+  }, {} as Record<string, number>);
+  const salesPieData = Object.entries(salesByStatus).map(([name, value]) => ({ name, value: Math.round(value) }));
+
+  // Monthly sales + purchase trend
+  const monthlyTrend = (() => {
+    const map: Record<string, { sales: number; purchases: number }> = {};
+    for (const d of salesDocs) {
+      const m = d.date.slice(0, 7);
+      if (!map[m]) map[m] = { sales: 0, purchases: 0 };
+      map[m].sales += d.total_rm;
+    }
+    for (const d of purchaseDocs) {
+      const m = d.date.slice(0, 7);
+      if (!map[m]) map[m] = { sales: 0, purchases: 0 };
+      map[m].purchases += d.total_rm;
+    }
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => ({
+      month: new Date(k + "-01T12:00:00").toLocaleDateString("en", { month: "short" }),
+      sales: Math.round(v.sales),
+      purchases: Math.round(v.purchases),
+    }));
+  })();
+
+  // Overview totals
+  const totalSales = salesDocs.reduce((s, d) => s + d.total_rm, 0);
+  const totalPurchases = purchaseDocs.reduce((s, d) => s + d.total_rm, 0);
+  const overviewPieData = [
+    { name: "Sales", value: Math.round(totalSales) },
+    { name: "Purchases", value: Math.round(totalPurchases) },
+  ];
+
   const tabs: { key: Tab; label: string }[] = [
     { key: "overview", label: "Overview" },
     { key: "purchase", label: "Purchase" },
@@ -141,6 +188,44 @@ export default function BusinessPage() {
                   </div>
                 </div>
 
+                {/* Charts */}
+                <ChartDropdown title="Statistics" open={chartsOpen} onToggle={() => setChartsOpen(!chartsOpen)}>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-1 text-center">Sales vs Purchases</p>
+                      <div className="h-28">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={overviewPieData} cx="50%" cy="50%" innerRadius={25} outerRadius={45} dataKey="value" strokeWidth={0}>
+                              {overviewPieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i]} />)}
+                            </Pie>
+                            <Tooltip formatter={(v: unknown) => `RM${v}`} contentStyle={{ fontSize: 10, borderRadius: 6, padding: "4px 8px" }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex justify-center gap-3 text-[9px]">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Sales</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" />Purchases</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-1 text-center">Monthly Trend</p>
+                      <div className="h-28">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={monthlyTrend} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={{ fontSize: 10, borderRadius: 6, padding: "4px 8px" }} formatter={(v: unknown) => `RM${v}`} />
+                            <Line type="monotone" dataKey="sales" stroke="#22c55e" strokeWidth={2} dot={false} />
+                            <Line type="monotone" dataKey="purchases" stroke="#ef4444" strokeWidth={2} dot={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                </ChartDropdown>
+
                 <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
                   <div className="px-3 py-2 border-b border-gray-100">
                     <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Recent Documents</span>
@@ -154,6 +239,47 @@ export default function BusinessPage() {
 
             {/* ── PURCHASE TAB ── */}
             {tab === "purchase" && (
+              <>
+              {purchasePieData.length > 0 && (
+                <ChartDropdown title="Purchase Statistics" open={chartsOpen} onToggle={() => setChartsOpen(!chartsOpen)}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-1 text-center">By Status</p>
+                      <div className="h-28">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={purchasePieData} cx="50%" cy="50%" innerRadius={25} outerRadius={45} dataKey="value" strokeWidth={0}>
+                              {purchasePieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip formatter={(v: unknown) => `RM${v}`} contentStyle={{ fontSize: 10, borderRadius: 6, padding: "4px 8px" }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-2 text-[9px]">
+                        {purchasePieData.map((d, i) => (
+                          <span key={d.name} className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />{d.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-1 text-center">Monthly Spend</p>
+                      <div className="h-28">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={monthlyTrend} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={{ fontSize: 10, borderRadius: 6, padding: "4px 8px" }} formatter={(v: unknown) => `RM${v}`} />
+                            <Line type="monotone" dataKey="purchases" stroke="#ef4444" strokeWidth={2} dot={{ r: 2, fill: "#ef4444" }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                </ChartDropdown>
+              )}
               <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
                 <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Purchase Documents</span>
@@ -165,10 +291,52 @@ export default function BusinessPage() {
                   <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
                 ))}
               </div>
+              </>
             )}
 
             {/* ── SALES TAB ── */}
             {tab === "sales" && (
+              <>
+              {salesPieData.length > 0 && (
+                <ChartDropdown title="Sales Statistics" open={chartsOpen} onToggle={() => setChartsOpen(!chartsOpen)}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-1 text-center">By Status</p>
+                      <div className="h-28">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={salesPieData} cx="50%" cy="50%" innerRadius={25} outerRadius={45} dataKey="value" strokeWidth={0}>
+                              {salesPieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip formatter={(v: unknown) => `RM${v}`} contentStyle={{ fontSize: 10, borderRadius: 6, padding: "4px 8px" }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-2 text-[9px]">
+                        {salesPieData.map((d, i) => (
+                          <span key={d.name} className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />{d.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-1 text-center">Monthly Revenue</p>
+                      <div className="h-28">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={monthlyTrend} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={{ fontSize: 10, borderRadius: 6, padding: "4px 8px" }} formatter={(v: unknown) => `RM${v}`} />
+                            <Line type="monotone" dataKey="sales" stroke="#22c55e" strokeWidth={2} dot={{ r: 2, fill: "#22c55e" }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                </ChartDropdown>
+              )}
               <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
                 <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Sales Documents</span>
@@ -180,6 +348,7 @@ export default function BusinessPage() {
                   <DocRowView key={doc.id} doc={doc} formatDate={formatDate} onView={() => viewDoc(doc)} />
                 ))}
               </div>
+              </>
             )}
 
             {/* ── CONTACTS TAB ── */}
@@ -244,5 +413,27 @@ function DocRowView({ doc, formatDate, onView }: { doc: DocRow; formatDate: (d: 
       <span className="text-xs font-medium text-gray-700 flex-shrink-0 w-16 text-right">RM{doc.total_rm.toFixed(2)}</span>
       <ChevronRight size={12} className="text-gray-300 flex-shrink-0" />
     </button>
+  );
+}
+
+// ── Chart Dropdown Component ──
+function ChartDropdown({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+      <button onClick={onToggle} className="w-full px-3 py-2.5 flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{title}</span>
+        <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.15 }}>
+          <ChevronDown size={14} className="text-gray-300" />
+        </motion.div>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            className="border-t border-gray-100 px-3 py-3">
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
