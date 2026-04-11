@@ -314,6 +314,33 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* ── Quick Links ── */}
+        <div>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick Links</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 no-scrollbar">
+            {[
+              { label: "Scan Doc", desc: "Photo a bill", href: "/accounts/scan", icon: ScanLine },
+              { label: "Market", desc: "Crop prices", href: "/market", icon: BarChart3 },
+              { label: "Alerts", desc: "Warnings", href: "/alerts", icon: Bell },
+              { label: "Inventory", desc: "Stock levels", href: "/inventory", icon: Package },
+              { label: "Documents", desc: "SO, PO, INV", href: "/business", icon: FileText },
+              { label: "Activity", desc: "Farm events", href: "/activity", icon: Activity },
+              { label: "Equipment", desc: "Depreciation", href: "/equipment", icon: Wrench },
+              { label: "Weather", desc: "Full forecast", href: "/weather", icon: CloudSun },
+            ].map((link) => {
+              const Icon = link.icon;
+              return (
+                <button key={link.label} onClick={() => router.push(link.href)}
+                  className="flex-shrink-0 w-24 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:bg-gray-50 transition-colors">
+                  <Icon size={16} className="text-gray-400 mb-1.5" />
+                  <p className="text-xs font-medium text-gray-800">{link.label}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{link.desc}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* ── Weather — Today Hourly ── */}
         {weather && (() => {
           const baseTemp = weather.temp_celsius;
@@ -590,33 +617,6 @@ export default function HomePage() {
             ))}
           </div>
         )}
-
-        {/* ── Quick Links ── */}
-        <div>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick Links</p>
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
-            {[
-              { label: "Scan Doc", desc: "Photo a bill", href: "/accounts/scan", icon: ScanLine },
-              { label: "Market", desc: "Crop prices", href: "/market", icon: BarChart3 },
-              { label: "Alerts", desc: "Warnings", href: "/alerts", icon: Bell },
-              { label: "Inventory", desc: "Stock levels", href: "/inventory", icon: Package },
-              { label: "Documents", desc: "SO, PO, INV", href: "/business", icon: FileText },
-              { label: "Activity", desc: "Farm events", href: "/activity", icon: Activity },
-              { label: "Equipment", desc: "Depreciation", href: "/equipment", icon: Wrench },
-              { label: "Weather", desc: "Full forecast", href: "/weather", icon: CloudSun },
-            ].map((link) => {
-              const Icon = link.icon;
-              return (
-                <button key={link.label} onClick={() => router.push(link.href)}
-                  className="flex-shrink-0 w-24 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:bg-gray-50 transition-colors">
-                  <Icon size={16} className="text-gray-400 mb-1.5" />
-                  <p className="text-xs font-medium text-gray-800">{link.label}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{link.desc}</p>
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
       </div>
     </div>
