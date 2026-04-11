@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, ChevronDown, Plus } from "lucide-react";
+import AISummary from "@/components/ui/AISummary";
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
@@ -161,12 +162,7 @@ export default function BusinessPage() {
       <div className="px-4 pt-3 space-y-3">
 
         {/* AI Summary */}
-        {summaryParts.length > 0 && (
-          <div className="py-1">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
-            <p className="text-xs text-gray-600 leading-relaxed">{summaryParts.join(". ")}.</p>
-          </div>
-        )}
+        {summaryParts.length > 0 && <AISummary>{`${summaryParts.join(". ")}.`}</AISummary>}
 
         {loading ? (
           <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />)}</div>

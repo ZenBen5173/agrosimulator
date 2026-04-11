@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ArrowLeft,
 } from "lucide-react";
+import AISummary from "@/components/ui/AISummary";
 import PageHeader from "@/components/ui/PageHeader";
 
 /* ------------------------------------------------------------------ */
@@ -664,8 +665,7 @@ export default function MarketPricesPage() {
         if (cropUp.length > 0) parts.push(`good time to sell ${cropUp.map((c) => c.item_name).join(", ")}`);
         return (
           <div className="px-4 py-2">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Market Insight</p>
-            <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
+            <AISummary label="Market Insight">{`${parts.join(". ")}.`}</AISummary>
           </div>
         );
       })()}

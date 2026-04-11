@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCw, ChevronDown } from "lucide-react";
+import AISummary from "@/components/ui/AISummary";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 
@@ -146,10 +147,7 @@ export default function PrepListPage() {
           if (data.total_labour_minutes > 60) parts.push(`plan ${Math.round(data.total_labour_minutes / 60)}+ hours of field work`);
           else parts.push(`about ${data.total_labour_minutes} minutes of work total`);
           return (
-            <div className="py-1">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
-              <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
-            </div>
+            <AISummary>{`${parts.join(". ")}.`}</AISummary>
           );
         })()}
 

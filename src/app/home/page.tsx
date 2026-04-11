@@ -24,6 +24,7 @@ import {
   Wrench,
   CloudSun,
 } from "lucide-react";
+import AISummary from "@/components/ui/AISummary";
 import { createClient } from "@/lib/supabase/client";
 import { useFarmStore } from "@/stores/farmStore";
 import FarmSwitcher from "@/components/home/FarmSwitcher";
@@ -307,12 +308,7 @@ export default function HomePage() {
         )}
 
         {/* ── AI Summary ── */}
-        {dailySummary && (
-          <div className="py-1">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
-            <p className="text-xs text-gray-600 leading-relaxed">{dailySummary}</p>
-          </div>
-        )}
+        {dailySummary && <AISummary>{dailySummary}</AISummary>}
 
         {/* ── Quick Links ── */}
         <div>

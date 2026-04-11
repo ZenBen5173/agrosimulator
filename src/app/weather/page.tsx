@@ -13,6 +13,7 @@ import {
   Sprout,
   RefreshCw,
 } from "lucide-react";
+import AISummary from "@/components/ui/AISummary";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { createClient } from "@/lib/supabase/client";
@@ -563,9 +564,8 @@ export default function WeatherPage() {
           else if (current.rainfall_mm < 2) parts.push("no significant rain \u2014 irrigate as planned");
           if (current.humidity_pct > 85) parts.push("high humidity increases fungal disease risk");
           return (
-            <div className="px-1 mb-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Farm Impact</p>
-              <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
+            <div className="mb-3">
+              <AISummary label="Farm Impact">{`${parts.join(". ")}.`}</AISummary>
             </div>
           );
         })()}

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Camera, ChevronDown, ChevronRight } from "lucide-react";
+import AISummary from "@/components/ui/AISummary";
 import PageHeader from "@/components/ui/PageHeader";
 import { useFarmStore } from "@/stores/farmStore";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -95,10 +96,7 @@ export default function InventoryPage() {
       <div className="px-4 pt-3 space-y-3">
 
         {/* AI Summary */}
-        <div className="py-1">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
-          <p className="text-xs text-gray-600 leading-relaxed">{summaryParts.join(". ")}.</p>
-        </div>
+        <AISummary>{`${summaryParts.join(". ")}.`}</AISummary>
 
         {/* Summary row */}
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
