@@ -135,6 +135,23 @@ export default function PrepListPage() {
           <span className="text-sm font-semibold text-gray-900">RM{data.total_estimated_cost_rm.toFixed(2)}</span>
         </div>
 
+        {/* ── AI Summary ── */}
+        {(() => {
+          const parts: string[] = [];
+          const allInStock = allResources.every((r) => !r.stock?.isLow);
+          parts.push(allInStock ? "All items in stock" : `Low stock on ${allResources.filter((r) => r.stock?.isLow).map((r) => r.name.split(" (")[0]).join(", ")}`);
+          const maxWaterPlot = data.plots.reduce((max, p) => p.water_litres > (max?.water_litres || 0) ? p : max, data.plots[0]);
+          if (maxWaterPlot && maxWaterPlot.water_litres > 0) parts.push(`Plot ${maxWaterPlot.label} needs the most water (${maxWaterPlot.water_litres}L) \u2014 start there`);
+          if (data.total_labour_minutes > 60) parts.push(`plan ${Math.round(data.total_labour_minutes / 60)}+ hours of field work`);
+          else parts.push(`about ${data.total_labour_minutes} minutes of work total`);
+          return (
+            <div className="py-1">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
+            </div>
+          );
+        })()}
+
         {/* ── Resources table ── */}
         {allResources.length > 0 && (
           <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">

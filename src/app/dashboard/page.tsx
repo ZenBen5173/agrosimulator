@@ -193,6 +193,26 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* AI Summary */}
+      {summary && (() => {
+        const parts: string[] = [];
+        const net = summary.net;
+        parts.push(net >= 0 ? `Net profit RM${net.toFixed(2)} this period` : `Net loss RM${Math.abs(net).toFixed(2)} this period \u2014 expenses exceed income`);
+        const sorted = [...summary.by_category].sort((a, b) => b.amount - a.amount);
+        if (sorted.length > 0) parts.push(`${sorted[0].category} is your biggest expense (RM${sorted[0].amount.toFixed(0)})`);
+        const incomeRecords = records.filter((r) => r.record_type === "income");
+        if (incomeRecords.length > 0) {
+          const topIncome = incomeRecords.sort((a, b) => b.amount - a.amount)[0];
+          parts.push(`top sale: RM${topIncome.amount.toFixed(0)} from ${topIncome.category.toLowerCase()}`);
+        }
+        return (
+          <div className="px-4 mb-4">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
+            <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
+          </div>
+        );
+      })()}
+
       {/* Revenue Chart */}
       <Card variant="default" className="mb-5 p-4">
         <h3 className="mb-3 text-sm font-bold text-gray-800">

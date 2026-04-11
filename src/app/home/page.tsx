@@ -234,6 +234,29 @@ export default function HomePage() {
   const incompleteTasks = tasks.filter((t) => !t.completed);
   const urgentCount = incompleteTasks.filter((t) => t.priority === "urgent").length;
 
+  // Build AI summary from available data
+  const summaryParts: string[] = [];
+  if (urgentCount > 0) {
+    const urgentTitles = incompleteTasks.filter((t) => t.priority === "urgent").slice(0, 2).map((t) => t.title.toLowerCase());
+    summaryParts.push(`${urgentCount} urgent task${urgentCount > 1 ? "s" : ""} today \u2014 ${urgentTitles.join(" and ")}`);
+  } else if (incompleteTasks.length > 0) {
+    summaryParts.push(`${incompleteTasks.length} tasks for today, none urgent`);
+  }
+  if (weather) {
+    if (weather.condition === "rainy" || weather.condition === "thunderstorm") {
+      summaryParts.push("rain expected, delay outdoor spraying");
+    } else if (weather.condition === "sunny" && weather.temp_celsius > 33) {
+      summaryParts.push("high heat today \u2014 water early morning to reduce evaporation");
+    }
+  }
+  if (alerts.length > 0) summaryParts.push(alerts[0].title.toLowerCase());
+  if (lowStock.length > 0) summaryParts.push(`running low on ${lowStock[0].item_name}`);
+  if (prepList && prepList.total_fertilizer_items.length > 0) {
+    const topItems = prepList.total_fertilizer_items.slice(0, 2).map((f) => f.type.split(" (")[0]);
+    summaryParts.push(`bring ${topItems.join(" and ")} from shed`);
+  }
+  const dailySummary = summaryParts.length > 0 ? summaryParts.join(". ") + "." : null;
+
   // Aggregate prep resources by item
   const resourceRows: { name: string; needed: string; stock: string | null; isLow: boolean }[] = [];
   if (prepList) {
@@ -274,6 +297,14 @@ export default function HomePage() {
             <span className="text-[10px] text-red-500 font-medium">{alerts.length}</span>
             <ChevronRight size={14} className="text-red-400" />
           </button>
+        )}
+
+        {/* ── AI Summary ── */}
+        {dailySummary && (
+          <div className="py-1">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
+            <p className="text-xs text-gray-600 leading-relaxed">{dailySummary}</p>
+          </div>
         )}
 
         {/* ── Weather — Today Hourly ── */}

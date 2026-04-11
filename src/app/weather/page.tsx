@@ -548,6 +548,28 @@ export default function WeatherPage() {
           ))}
         </AnimatePresence>
 
+        {/* AI Summary */}
+        {(() => {
+          const parts: string[] = [];
+          const goodSpray = current.wind_kmh < 15 && current.humidity_pct < 80;
+          if (goodSpray) {
+            const cutoff = hourly.find((h) => h.rain_mm > 3);
+            parts.push(cutoff ? `Good spray conditions until ${cutoff.time}` : "Good spray conditions all day");
+          } else {
+            parts.push(`Poor spray conditions \u2014 ${current.wind_kmh >= 15 ? "wind too strong" : "humidity too high"}`);
+          }
+          const rainyHours = hourly.reduce((s, h) => s + (h.rain_mm > 2 ? 1 : 0), 0);
+          if (rainyHours > 3) parts.push(`rain likely for ${rainyHours} hours today \u2014 skip irrigation`);
+          else if (current.rainfall_mm < 2) parts.push("no significant rain \u2014 irrigate as planned");
+          if (current.humidity_pct > 85) parts.push("high humidity increases fungal disease risk");
+          return (
+            <div className="px-1 mb-3">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Farm Impact</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
+            </div>
+          );
+        })()}
+
         {/* Hourly forecast */}
         <div className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm">
           <h2 className="text-sm font-bold text-gray-800 mb-3">24-Hour Forecast</h2>

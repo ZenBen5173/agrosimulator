@@ -167,9 +167,29 @@ export default function FarmTabPage() {
         )}
       </div>
 
+      {/* Farm health summary */}
+      {plots.length > 0 && (() => {
+        const atRisk = plots.filter((p) => p.warning_level === "red" || p.warning_level === "orange");
+        const caution = plots.filter((p) => p.warning_level === "yellow");
+        const healthy = plots.length - atRisk.length - caution.length;
+        const stages = plots.reduce((acc, p) => { acc[p.growth_stage] = (acc[p.growth_stage] || 0) + 1; return acc; }, {} as Record<string, number>);
+        const dominantStage = Object.entries(stages).sort((a, b) => b[1] - a[1])[0];
+        const parts: string[] = [];
+        if (atRisk.length > 0) parts.push(`${atRisk.length} plot${atRisk.length > 1 ? "s" : ""} need attention (${atRisk.map((p) => p.label).join(", ")})`);
+        else parts.push(`All ${plots.length} plots healthy`);
+        if (dominantStage) parts.push(`mostly ${dominantStage[0]} stage`);
+        if (caution.length > 0) parts.push(`${caution.length} on watch`);
+        return (
+          <div className="px-4 pt-3">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">AI Summary</p>
+            <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
+          </div>
+        );
+      })()}
+
       {/* Plot cards */}
       {plots.length > 0 && (
-        <div className="px-4 pt-4">
+        <div className="px-4 pt-3">
           <h2 className="text-sm font-bold text-gray-800 mb-2">Your Plots</h2>
           <PlotCardRow />
         </div>

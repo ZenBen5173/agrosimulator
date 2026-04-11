@@ -649,6 +649,27 @@ export default function MarketPricesPage() {
         </div>
       </div>
 
+      {/* AI Summary */}
+      {items.length > 0 && (() => {
+        const parts: string[] = [];
+        const sorted = [...items].sort((a, b) => Math.abs(b.trend_pct) - Math.abs(a.trend_pct));
+        const bigMover = sorted[0];
+        if (bigMover && Math.abs(bigMover.trend_pct) > 3) {
+          parts.push(`${bigMover.item_name} ${bigMover.trend_pct > 0 ? "up" : "down"} ${Math.abs(bigMover.trend_pct).toFixed(0)}% this week${bigMover.trend_pct > 10 ? " \u2014 significant move" : ""}`);
+        }
+        if (upCount > downCount) parts.push("market trending positive overall");
+        else if (downCount > upCount) parts.push("prices under pressure");
+        else parts.push("market mostly stable");
+        const cropUp = items.filter((i) => i.item_type === "crop" && i.trend_pct > 5);
+        if (cropUp.length > 0) parts.push(`good time to sell ${cropUp.map((c) => c.item_name).join(", ")}`);
+        return (
+          <div className="px-4 py-2">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Market Insight</p>
+            <p className="text-xs text-gray-600 leading-relaxed">{parts.join(". ")}.</p>
+          </div>
+        );
+      })()}
+
       {/* Time range selector */}
       <div className="flex items-center justify-between px-4 py-3">
         <p className="text-xs text-gray-500 font-medium">
