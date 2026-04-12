@@ -359,13 +359,22 @@ export async function POST(request: Request) {
       reply: replyWithAction,
       action: actionResult,
       used_tools: result.used_tools,
+      source: "vertex_ai",
+      model: "gemini-2.5-flash",
     });
   } catch (err) {
     console.error("Chat API error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+
+    // Return mock fallback response so chat doesn't break
+    const mockReply = "I'm having trouble connecting to AI right now. Please try again in a moment.";
+    return NextResponse.json({
+      reply: mockReply,
+      action: null,
+      used_tools: [],
+      source: "mock",
+      model: null,
+      error: "ai_unavailable",
+    });
   }
 }
 

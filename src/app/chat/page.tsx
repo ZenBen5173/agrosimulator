@@ -119,7 +119,7 @@ export default function ChatPage() {
 
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed");
 
-      const { reply, action, used_tools } = await res.json();
+      const { reply, action, used_tools, source, model } = await res.json();
 
       setMessages((prev) => [...prev, {
         id: `temp-a-${Date.now()}`,
@@ -127,7 +127,7 @@ export default function ChatPage() {
         thread_id: activeThread.id,
         role: "assistant",
         content: reply,
-        metadata: { action, used_tools },
+        metadata: { action, used_tools, source, model },
         created_at: new Date().toISOString(),
       }]);
 
@@ -225,7 +225,15 @@ export default function ChatPage() {
                           ))}
                         </div>
                       )}
-                      <span className="text-[9px] text-gray-300">Gemini 2.5 Flash via Vertex AI</span>
+                      {(() => {
+                        const meta = msg.metadata as Record<string, unknown> | null;
+                        const src = meta?.source as string | undefined;
+                        return src === "mock" ? (
+                          <span className="text-[9px] text-amber-400">Mock response — AI unavailable</span>
+                        ) : (
+                          <span className="text-[9px] text-gray-300">{(meta?.model as string) || "Gemini 2.5 Flash"} via Vertex AI</span>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
