@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getOrigin } from "@/lib/origin";
 
 /**
  * Transfer a document to the next step in the chain.
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   if (source.supplier_id) transfer.body.supplier_id = source.supplier_id;
 
   // Call the target API internally
-  const origin = new URL(request.url).origin;
+  const origin = getOrigin(request);
   const res = await fetch(`${origin}${transfer.url}`, {
     method: "POST",
     headers: {

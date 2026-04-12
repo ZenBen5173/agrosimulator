@@ -1,3 +1,4 @@
+import { getOrigin } from "@/lib/origin";
 import { rateLimit } from "@/lib/rate-limit";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     type: "magiclink",
     email,
     options: {
-      redirectTo: `${request.headers.get("x-forwarded-proto") || "https"}://${request.headers.get("host") || new URL(request.url).host}/auth/callback`,
+      redirectTo: `${getOrigin(request)}/auth/callback`,
     },
   });
 

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { chatActionFlow } from "@/flows/chatAction";
 import { sendPushToUser } from "@/lib/pushNotify";
+import { getOrigin } from "@/lib/origin";
 import { getNextDocNumber, insertDocumentItems, updateInventoryStock } from "@/lib/business";
 
 export async function POST(request: Request) {
@@ -260,7 +261,7 @@ export async function POST(request: Request) {
             const { data: rfq } = await supabase.from("purchase_rfqs").select("*, suppliers(name)").eq("id", action.rq_id).single();
             if (rfq) {
               // Create PO from RQ
-              const origin = new URL(request.url).origin;
+              const origin = getOrigin(request);
               const poRes = await fetch(`${origin}/api/purchase/orders`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
