@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Loader2, Plus, ArrowLeft, ChevronRight, Paperclip, MoreVertical } from "lucide-react";
+import { Send, Loader2, Plus, ArrowLeft, ChevronRight, Paperclip, MoreVertical, FileText, ExternalLink } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useFarmStore } from "@/stores/farmStore";
 import toast from "react-hot-toast";
@@ -17,6 +18,7 @@ const QUICK_SUGGESTIONS = [
 ];
 
 export default function ChatPage() {
+  const router = useRouter();
   const { farm, setFarm } = useFarmStore();
 
   // Thread list state
@@ -214,6 +216,62 @@ export default function ChatPage() {
                     : "rounded-2xl rounded-bl-sm bg-white text-gray-800 border border-gray-100"
                 }`}>
                   <div className="whitespace-pre-wrap"><MessageContent content={msg.content} /></div>
+                  {/* Document preview card */}
+                  {msg.role === "assistant" && (() => {
+                    const meta = msg.metadata as Record<string, unknown> | null;
+                    const actionRes = meta?.action_result as Record<string, unknown> | undefined;
+                    const doc = actionRes?.document as {
+                      doc_type: string; doc_number: string; doc_id: string;
+                      supplier?: string; total_rm?: number; href: string;
+                      items?: { item_name: string; quantity: number; unit: string; unit_price_rm: number }[];
+                      related?: { doc_type: string; doc_number: string; doc_id: string; href: string }[];
+                    } | undefined;
+                    if (!doc) return null;
+                    return (
+                      <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden">
+                        <button
+                          onClick={() => router.push(doc.href)}
+                          className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-gray-100 transition-colors text-left"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                            <FileText size={14} className="text-green-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wider">{doc.doc_type}</p>
+                            <p className="text-xs font-semibold text-gray-800">{doc.doc_number}</p>
+                            {doc.supplier && <p className="text-[10px] text-gray-400">{doc.supplier}</p>}
+                          </div>
+                          {doc.total_rm != null && (
+                            <span className="text-xs font-semibold text-gray-700">RM{doc.total_rm.toFixed(2)}</span>
+                          )}
+                          <ExternalLink size={12} className="text-gray-300 flex-shrink-0" />
+                        </button>
+                        {doc.items && doc.items.length > 0 && (
+                          <div className="px-3 pb-2 border-t border-gray-200">
+                            {doc.items.map((item, i) => (
+                              <div key={i} className="flex items-center justify-between py-1 text-[10px]">
+                                <span className="text-gray-600">{item.item_name}</span>
+                                <span className="text-gray-400">{item.quantity} {item.unit} x RM{item.unit_price_rm.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {doc.related && doc.related.length > 0 && (
+                          <div className="px-3 pb-2 border-t border-gray-200 flex gap-1.5 pt-1.5">
+                            {doc.related.map((rel, i) => (
+                              <button
+                                key={i}
+                                onClick={(e) => { e.stopPropagation(); router.push(rel.href); }}
+                                className="text-[9px] text-green-600 bg-green-50 px-2 py-1 rounded hover:bg-green-100 transition-colors"
+                              >
+                                {rel.doc_type}: {rel.doc_number}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {msg.role === "assistant" && (
                     <div className="mt-1.5 border-t border-gray-100 pt-1.5">
                       {msg.metadata && Array.isArray((msg.metadata as Record<string, unknown>).used_tools) && (

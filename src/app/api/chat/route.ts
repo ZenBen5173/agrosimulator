@@ -103,7 +103,20 @@ export async function POST(request: Request) {
     });
 
     // Execute action if present
-    let actionResult: { type: string; details: string } | null = null;
+    let actionResult: {
+      type: string;
+      details: string;
+      document?: {
+        doc_type: string;
+        doc_number: string;
+        doc_id: string;
+        supplier?: string;
+        total_rm?: number;
+        items?: { item_name: string; quantity: number; unit: string; unit_price_rm: number }[];
+        href: string;
+        related?: { doc_type: string; doc_number: string; doc_id: string; href: string }[];
+      };
+    } | null = null;
 
     if (result.action && result.action.action_type !== "none") {
       const action = result.action;
@@ -146,6 +159,12 @@ export async function POST(request: Request) {
           actionResult = {
             type: action.action_type,
             details: `Created task: "${action.task_title}"${plotId ? ` for plot ${action.plot_label}` : ""}`,
+            document: {
+              doc_type: "Task",
+              doc_number: action.task_title || "New Task",
+              doc_id: task?.id || "",
+              href: "/home",
+            },
           };
 
           // Send push notification
@@ -224,7 +243,16 @@ export async function POST(request: Request) {
 
               actionResult = {
                 type: "create_rq",
-                details: `RQ drafted: ${rfqNumber} (RM${totalRm.toFixed(2)}) — [View RQ](/business/rfq/${rfq.id})`,
+                details: `RQ drafted: ${rfqNumber} (RM${totalRm.toFixed(2)})`,
+                document: {
+                  doc_type: "Request Quotation",
+                  doc_number: rfqNumber,
+                  doc_id: rfq.id,
+                  supplier: action.supplier_name || undefined,
+                  total_rm: totalRm,
+                  items: action.items,
+                  href: `/business/rfq/${rfq.id}`,
+                },
               };
 
               // Store rq_id in metadata so next "ok" can reference it
@@ -296,9 +324,25 @@ export async function POST(request: Request) {
                 }
 
                 const supplierName = (rfq.suppliers as { name: string } | null)?.name || "supplier";
+                const related: { doc_type: string; doc_number: string; doc_id: string; href: string }[] = [];
+                if (grnRes.ok) {
+                  const grnData2 = await grnRes.clone().json().catch(() => null);
+                  if (grnData2) related.push({ doc_type: "GRN", doc_number: grnData2.grn_number || "GRN", doc_id: grnData2.id, href: `/business/grn/${grnData2.id}` });
+                }
+                if (billNumber) related.push({ doc_type: "Bill", doc_number: billNumber, doc_id: "", href: "/business?tab=purchase" });
+
                 actionResult = {
                   type: "confirm_purchase",
-                  details: `Purchase confirmed! Created ${poData.po_number} → GRN → ${billNumber || "Bill"}. Inventory updated, expense recorded. [View PO](/business/purchase_order/${poData.id})`,
+                  details: `Purchase confirmed! Inventory updated, expense recorded.`,
+                  document: {
+                    doc_type: "Purchase Order",
+                    doc_number: poData.po_number,
+                    doc_id: poData.id,
+                    supplier: supplierName,
+                    total_rm: rfq.total_rm,
+                    href: `/business/purchase_order/${poData.id}`,
+                    related,
+                  },
                 };
               }
             }
