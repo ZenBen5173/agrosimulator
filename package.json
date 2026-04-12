@@ -11,9 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@genkit-ai/googleai": "^1.28.0",
     "@genkit-ai/vertexai": "^1.32.0",
-    "@google/generative-ai": "^0.24.1",
     "@notionhq/client": "^5.16.0",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.1",
