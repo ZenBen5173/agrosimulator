@@ -380,3 +380,31 @@ export const webSearchTool = ai.defineTool(
     };
   }
 );
+
+// ─── knowledgeSearchTool (Vertex AI Search + local fallback) ─
+
+export const knowledgeSearchTool = ai.defineTool(
+  {
+    name: "searchAgriculturalKnowledge",
+    description:
+      "Search the MARDI agricultural knowledge base for disease information, soil profiles, crop resource profiles, and historical price data. Use this before diagnosing diseases or recommending treatments.",
+    inputSchema: z.object({
+      query: z.string().describe("Search query — e.g. 'chilli anthracnose treatment', 'clay soil kedah crops', 'kangkung price trend'"),
+    }),
+    outputSchema: z.object({
+      results: z.array(
+        z.object({
+          title: z.string(),
+          content: z.string(),
+          source: z.string(),
+          relevance: z.number(),
+        })
+      ),
+    }),
+  },
+  async ({ query }) => {
+    const { searchAgriculturalKnowledge } = await import("@/services/vertexSearch");
+    const results = await searchAgriculturalKnowledge(query, 5);
+    return { results };
+  }
+);
