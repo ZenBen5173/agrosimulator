@@ -6,19 +6,19 @@
  * to avoid duplicate calls.
  */
 
-// ── Feature flags: true = use real Gemini, false = always mock ──
+// ── Feature flags: all ON — Vertex AI (60 req/min free) ──
 export const USE_REAL_GEMINI_FOR: Record<string, boolean> = {
-  chat: true,              // AgroBot — judges interact live
-  diseaseDetection: true,  // Photo analysis — demo wow moment
-  receiptScan: true,       // Document scanning — live demo moment
-  documentScan: true,      // AI doc scanner — live demo moment
-  riskScoring: false,      // Always mock
-  intelligence: false,     // Always mock
-  planting: false,         // Always mock
-  resources: false,        // Always mock
-  farmResearch: false,     // Always mock
-  plotLayout: false,       // Always mock
-  cronJobs: false,         // Always mock
+  chat: true,
+  diseaseDetection: true,
+  receiptScan: true,
+  documentScan: true,
+  riskScoring: true,
+  intelligence: true,
+  planting: true,
+  resources: true,
+  farmResearch: true,
+  plotLayout: true,
+  cronJobs: true,
 };
 
 // ── Response cache (2-hour TTL) ──
