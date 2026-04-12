@@ -32,8 +32,9 @@ let callCount = 0;
  * Returns false if the feature is disabled OR if Gemini key is missing.
  */
 export function shouldUseRealGemini(feature: string): boolean {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === "your_gemini_api_key_here") return false;
+  // Vertex AI: check for GCP project. AI Studio fallback: check for API key.
+  const hasAI = process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GEMINI_API_KEY;
+  if (!hasAI) return false;
   return USE_REAL_GEMINI_FOR[feature] ?? false;
 }
 
