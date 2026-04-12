@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
   CalendarCheck,
   MessageCircle,
@@ -11,6 +10,7 @@ import {
   Sparkles,
   ArrowRight,
   Loader2,
+  Wrench,
 } from "lucide-react";
 
 const FEATURES = [
@@ -42,16 +42,6 @@ export default function LandingPage() {
   const [entering, setEntering] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const [loggedInUser, setLoggedInUser] = useState<string | null>(null);
-
-  // Check if already logged in
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setLoggedInUser(user.email || null);
-    });
-  }, []);
-
   const handleEnter = async (email: string, startTour = false) => {
     setEntering(email);
     setError("");
@@ -63,7 +53,6 @@ export default function LandingPage() {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setEntering(null); return; }
-      // Pass tour flag through callback URL
       const url = startTour ? `${data.callbackUrl}&tour=1` : data.callbackUrl;
       router.push(url);
     } catch {
@@ -92,52 +81,31 @@ export default function LandingPage() {
           Replace your notebook, receipt box, weather app, and spreadsheet — all in one AI-powered app.
         </p>
 
-        {loggedInUser ? (
-          <>
-            <button
-              onClick={() => router.push("/home?tour=1")}
-              className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white hover:bg-gray-800"
-            >
-              Continue as {loggedInUser.split("@")[0]} <ArrowRight size={16} />
-            </button>
-            <button
-              onClick={async () => {
-                const supabase = createClient();
-                await supabase.auth.signOut();
-                setLoggedInUser(null);
-              }}
-              className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-xs font-medium text-gray-500 hover:bg-gray-50"
-            >
-              Sign out &amp; switch account
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => handleEnter("demo@agrosim.app", true)}
-              disabled={entering !== null}
-              className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white disabled:opacity-60 transition-all hover:bg-gray-800"
-            >
-              {entering === "demo@agrosim.app" ? (
-                <><Loader2 size={16} className="animate-spin" /> Entering...</>
-              ) : (
-                <>Enter App <ArrowRight size={16} /></>
-              )}
-            </button>
+        {/* Judge entry — starts guided tour */}
+        <button
+          onClick={() => handleEnter("demo@agrosim.app", true)}
+          disabled={entering !== null}
+          className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white disabled:opacity-60 transition-all hover:bg-gray-800"
+        >
+          {entering === "demo@agrosim.app" ? (
+            <><Loader2 size={16} className="animate-spin" /> Entering...</>
+          ) : (
+            <>Enter App <ArrowRight size={16} /></>
+          )}
+        </button>
 
-            <button
-              onClick={() => handleEnter("dev@agrosim.app")}
-              disabled={entering !== null}
-              className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-xs font-medium text-gray-500 disabled:opacity-60 hover:bg-gray-50"
-            >
-              {entering === "dev@agrosim.app" ? (
-                <><Loader2 size={14} className="animate-spin" /> Entering...</>
-              ) : (
-                <>Dev / Testing Account</>
-              )}
-            </button>
-          </>
-        )}
+        {/* Dev/testing entry — no tour */}
+        <button
+          onClick={() => handleEnter("dev@agrosim.app")}
+          disabled={entering !== null}
+          className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-xs font-medium text-gray-500 disabled:opacity-60 hover:bg-gray-50"
+        >
+          {entering === "dev@agrosim.app" ? (
+            <><Loader2 size={14} className="animate-spin" /> Entering...</>
+          ) : (
+            <><Wrench size={12} /> Dev / Testing</>
+          )}
+        </button>
 
         {error && <p className="mt-3 text-xs text-red-500 text-center">{error}</p>}
       </div>
