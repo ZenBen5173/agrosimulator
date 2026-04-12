@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     type: "magiclink",
     email,
     options: {
-      redirectTo: `${new URL(request.url).origin}/auth/callback`,
+      redirectTo: `${request.headers.get("x-forwarded-proto") || "https"}://${request.headers.get("host") || new URL(request.url).host}/auth/callback`,
     },
   });
 
