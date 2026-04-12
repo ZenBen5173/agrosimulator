@@ -25,6 +25,7 @@ import {
   CloudSun,
 } from "lucide-react";
 import AISummary from "@/components/ui/AISummary";
+import CoachMarks from "@/components/ui/CoachMarks";
 import { createClient } from "@/lib/supabase/client";
 import { useFarmStore } from "@/stores/farmStore";
 import FarmSwitcher from "@/components/home/FarmSwitcher";
@@ -119,6 +120,16 @@ export default function HomePage() {
   const [treatments, setTreatments] = useState<DiagnosisSession[]>([]);
   const [lowStock, setLowStock] = useState<InventoryItem[]>([]);
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
+  const [showTour, setShowTour] = useState(false);
+
+  // Start tour if ?tour=1 param present (from landing page)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tour") === "1") {
+      const timer = setTimeout(() => setShowTour(true), 1200);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // ── Data Loading ──
   useEffect(() => {
@@ -308,10 +319,10 @@ export default function HomePage() {
         )}
 
         {/* ── AI Summary ── */}
-        {dailySummary && <AISummary>{dailySummary}</AISummary>}
+        {dailySummary && <div data-tour="ai-summary"><AISummary>{dailySummary}</AISummary></div>}
 
         {/* ── Quick Links ── */}
-        <div>
+        <div data-tour="quick-links">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick Links</p>
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 no-scrollbar">
             {[
@@ -371,7 +382,7 @@ export default function HomePage() {
           const fmt12 = (h: number) => h === now ? "Now" : h === 0 ? "12am" : h === 12 ? "12pm" : h > 12 ? `${h - 12}pm` : `${h}am`;
 
           return (
-            <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div data-tour="weather" className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
                 <div className="flex items-baseline gap-2">
@@ -434,7 +445,7 @@ export default function HomePage() {
 
         {/* ── Resources Needed Today ── */}
         {resourceRows.length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <div data-tour="resources" className="rounded-lg border border-gray-200 bg-white overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Resources Needed Today</span>
               <span className="text-xs font-semibold text-gray-700">RM{prepList?.total_estimated_cost_rm.toFixed(2)}</span>
@@ -471,7 +482,7 @@ export default function HomePage() {
         )}
 
         {/* ── Tasks — Compact Datatable ── */}
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <div data-tour="tasks" className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Tasks</span>
@@ -615,6 +626,11 @@ export default function HomePage() {
         )}
 
       </div>
+
+      {/* Tour overlay */}
+      {showTour && (
+        <CoachMarks onComplete={() => setShowTour(false)} />
+      )}
     </div>
   );
 }

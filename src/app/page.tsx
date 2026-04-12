@@ -52,7 +52,7 @@ export default function LandingPage() {
     });
   }, []);
 
-  const handleEnter = async (email: string) => {
+  const handleEnter = async (email: string, startTour = false) => {
     setEntering(email);
     setError("");
     try {
@@ -63,7 +63,9 @@ export default function LandingPage() {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setEntering(null); return; }
-      router.push(data.callbackUrl);
+      // Pass tour flag through callback URL
+      const url = startTour ? `${data.callbackUrl}&tour=1` : data.callbackUrl;
+      router.push(url);
     } catch {
       setError("Failed to connect. Please try again.");
       setEntering(null);
@@ -93,7 +95,7 @@ export default function LandingPage() {
         {loggedInUser ? (
           <>
             <button
-              onClick={() => router.push("/home")}
+              onClick={() => router.push("/home?tour=1")}
               className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white hover:bg-gray-800"
             >
               Continue as {loggedInUser.split("@")[0]} <ArrowRight size={16} />
@@ -112,7 +114,7 @@ export default function LandingPage() {
         ) : (
           <>
             <button
-              onClick={() => handleEnter("demo@agrosim.app")}
+              onClick={() => handleEnter("demo@agrosim.app", true)}
               disabled={entering !== null}
               className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white disabled:opacity-60 transition-all hover:bg-gray-800"
             >

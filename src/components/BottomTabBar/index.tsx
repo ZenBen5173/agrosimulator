@@ -38,6 +38,7 @@ export default function BottomTabBar() {
     return (
       <button
         key={tab.key}
+        data-tour={`nav-${tab.key}`}
         onClick={() => router.push(tab.href)}
         className="relative flex flex-1 flex-col items-center justify-center gap-1 py-1"
       >
@@ -66,6 +67,7 @@ export default function BottomTabBar() {
         {/* Center FAB */}
         <div className="relative flex flex-1 items-center justify-center">
           <motion.button
+            data-tour="nav-fab"
             onClick={() => setFabOpen((prev) => !prev)}
             aria-label="Quick actions"
             aria-haspopup="true"

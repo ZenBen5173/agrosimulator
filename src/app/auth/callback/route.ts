@@ -8,6 +8,7 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type");
+  const tour = searchParams.get("tour");
 
   const supabase = await createClient();
 
@@ -53,8 +54,10 @@ export async function GET(request: Request) {
     .eq("onboarding_done", true)
     .limit(1);
 
+  const tourParam = tour === "1" ? "?tour=1" : "";
+
   if (farms && farms.length > 0) {
-    return NextResponse.redirect(`${origin}/home`);
+    return NextResponse.redirect(`${origin}/home${tourParam}`);
   }
 
   return NextResponse.redirect(`${origin}/onboarding`);
