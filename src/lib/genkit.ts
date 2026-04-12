@@ -16,7 +16,7 @@ function createAI() {
         projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
         location: "us-central1",
       })],
-      model: "vertexai/gemini-2.0-flash-lite",
+      model: "vertexai/gemini-2.0-flash",
     });
   }
 
@@ -42,7 +42,7 @@ export const DISEASE_MODEL = process.env.K_SERVICE
 
 /** Default model for all other calls */
 export const DEFAULT_MODEL = process.env.K_SERVICE
-  ? "vertexai/gemini-2.0-flash-lite"
+  ? "vertexai/gemini-2.0-flash"
   : "googleai/gemini-2.0-flash-lite";
 
 /** Re-export budget utilities for services */
