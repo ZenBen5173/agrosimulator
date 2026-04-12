@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@genkit-ai/googleai": "^1.28.0",
     "@genkit-ai/vertexai": "^1.32.0",
     "@notionhq/client": "^5.16.0",
     "@supabase/ssr": "^0.10.0",
