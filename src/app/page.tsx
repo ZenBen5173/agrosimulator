@@ -39,7 +39,7 @@ const FEATURES = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const [entering, setEntering] = useState(false);
+  const [entering, setEntering] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   // Auto-redirect if already logged in
@@ -50,21 +50,21 @@ export default function LandingPage() {
     });
   }, [router]);
 
-  const handleEnter = async () => {
-    setEntering(true);
+  const handleEnter = async (email: string) => {
+    setEntering(email);
     setError("");
     try {
       const res = await fetch("/api/auth/dev-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "demo@agrosim.app" }),
+        body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      if (data.error) { setError(data.error); setEntering(false); return; }
+      if (data.error) { setError(data.error); setEntering(null); return; }
       router.push(data.callbackUrl);
     } catch {
       setError("Failed to connect. Please try again.");
-      setEntering(false);
+      setEntering(null);
     }
   };
 
@@ -89,14 +89,26 @@ export default function LandingPage() {
         </p>
 
         <button
-          onClick={handleEnter}
-          disabled={entering}
+          onClick={() => handleEnter("demo@agrosim.app")}
+          disabled={entering !== null}
           className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white disabled:opacity-60 transition-all hover:bg-gray-800"
         >
-          {entering ? (
+          {entering === "demo@agrosim.app" ? (
             <><Loader2 size={16} className="animate-spin" /> Entering...</>
           ) : (
             <>Enter App <ArrowRight size={16} /></>
+          )}
+        </button>
+
+        <button
+          onClick={() => handleEnter("dev@agrosim.app")}
+          disabled={entering !== null}
+          className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-xs font-medium text-gray-500 disabled:opacity-60 hover:bg-gray-50"
+        >
+          {entering === "dev@agrosim.app" ? (
+            <><Loader2 size={14} className="animate-spin" /> Entering...</>
+          ) : (
+            <>Dev / Testing Account</>
           )}
         </button>
 
