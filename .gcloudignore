@@ -1,0 +1,7 @@
+node_modules
+.next
+.env.local
+.git
+.claude
+CLAUDE.md
+# Do NOT ignore .env.production — needed for Docker build
