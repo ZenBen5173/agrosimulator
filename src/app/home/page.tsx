@@ -447,7 +447,10 @@ export default function HomePage() {
         {resourceRows.length > 0 && (
           <div data-tour="resources" className="rounded-lg border border-gray-200 bg-white overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Resources Needed Today</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Resources Needed Today</span>
+                <span className="text-[8px] text-gray-300 bg-gray-50 px-1 py-0.5 rounded">Gemini</span>
+              </div>
               <span className="text-xs font-semibold text-gray-700">RM{prepList?.total_estimated_cost_rm.toFixed(2)}</span>
             </div>
             <table className="w-full text-xs">
@@ -486,6 +489,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Tasks</span>
+              <span className="text-[8px] text-gray-300 bg-gray-50 px-1 py-0.5 rounded">Gemini</span>
               {urgentCount > 0 && (
                 <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">{urgentCount} urgent</span>
               )}

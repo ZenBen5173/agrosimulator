@@ -214,13 +214,18 @@ export default function ChatPage() {
                     : "rounded-2xl rounded-bl-sm bg-white text-gray-800 border border-gray-100"
                 }`}>
                   <div className="whitespace-pre-wrap"><MessageContent content={msg.content} /></div>
-                  {msg.role === "assistant" && msg.metadata && Array.isArray((msg.metadata as Record<string, unknown>).used_tools) && (
-                    <div className="mt-1.5 flex flex-wrap gap-1 border-t border-gray-100 pt-1.5">
-                      {((msg.metadata as Record<string, unknown>).used_tools as string[]).map((tool: string) => (
-                        <span key={tool} className="inline-flex items-center gap-0.5 rounded-full bg-green-50 px-1.5 py-0.5 text-[9px] text-green-600">
-                          <span className="h-1 w-1 rounded-full bg-green-400" />{tool}
-                        </span>
-                      ))}
+                  {msg.role === "assistant" && (
+                    <div className="mt-1.5 border-t border-gray-100 pt-1.5">
+                      {msg.metadata && Array.isArray((msg.metadata as Record<string, unknown>).used_tools) && (
+                        <div className="flex flex-wrap gap-1 mb-1">
+                          {((msg.metadata as Record<string, unknown>).used_tools as string[]).map((tool: string) => (
+                            <span key={tool} className="inline-flex items-center gap-0.5 rounded-full bg-green-50 px-1.5 py-0.5 text-[9px] text-green-600">
+                              <span className="h-1 w-1 rounded-full bg-green-400" />{tool}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <span className="text-[9px] text-gray-300">Gemini 2.5 Flash via Vertex AI</span>
                     </div>
                   )}
                 </div>
