@@ -3,8 +3,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-// DEV ONLY — generates a magic link that bypasses email delivery
-// Remove this route before production deployment
+// Demo login — generates a magic link for pre-seeded accounts
 export async function POST(request: Request) {
     const limited = rateLimit(request, "auth"); if (limited) return limited;
 
