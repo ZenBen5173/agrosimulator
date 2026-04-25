@@ -7,6 +7,15 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
     const limited = rateLimit(request, "auth"); if (limited) return limited;
 
+  // DEMO MODE: When Supabase is paused, skip the real magic link flow and
+  // return a callback URL that auth/callback will recognise as the demo session.
+  if (process.env.DEMO_MODE === "true" || process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
+    const { email: demoEmail } = await request.json().catch(() => ({ email: "demo@agrosim.app" }));
+    return NextResponse.json({
+      callbackUrl: `/auth/callback?demo=1&email=${encodeURIComponent(demoEmail || "demo@agrosim.app")}`,
+    });
+  }
+
   // Allow dev login if SUPABASE_SERVICE_ROLE_KEY is set (needed for demo/hackathon)
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Not available" }, { status: 403 });
