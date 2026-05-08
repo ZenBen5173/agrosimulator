@@ -9,13 +9,6 @@ export async function GET(request: Request) {
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type");
   const tour = searchParams.get("tour");
-  const demo = searchParams.get("demo");
-
-  // DEMO MODE: skip Supabase auth entirely and redirect straight to /home
-  if (demo === "1" || process.env.DEMO_MODE === "true" || process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
-    const tourParam = tour === "1" ? "?tour=1" : "";
-    return NextResponse.redirect(`${origin}/home${tourParam}`);
-  }
 
   const supabase = await createClient();
 
