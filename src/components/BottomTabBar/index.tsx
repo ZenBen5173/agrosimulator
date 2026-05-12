@@ -5,21 +5,23 @@ import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   CalendarCheck,
-  Map,
-  MessageCircle,
+  Stethoscope,
+  Users,
   BookOpen,
   Plus,
 } from "lucide-react";
 import FabMenu from "./FabMenu";
 
+// AgroSim 2.0 navigation. Three layers of the spec → three primary tabs
+// flanking the FAB; Today is the home base.
 const LEFT_TABS = [
   { key: "home", label: "Today", icon: CalendarCheck, href: "/home" },
-  { key: "farm", label: "Farm", icon: Map, href: "/farm" },
+  { key: "care", label: "Inspect", icon: Stethoscope, href: "/inspection/v2" },
 ];
 
 const RIGHT_TABS = [
-  { key: "chat", label: "Chat", icon: MessageCircle, href: "/chat" },
-  { key: "accounts", label: "Accounts", icon: BookOpen, href: "/dashboard" },
+  { key: "pact", label: "Pact", icon: Users, href: "/market" },
+  { key: "books", label: "Books", icon: BookOpen, href: "/inventory" },
 ];
 
 const ALL_TABS = [...LEFT_TABS, ...RIGHT_TABS];
@@ -42,14 +44,22 @@ export default function BottomTabBar() {
         onClick={() => router.push(tab.href)}
         className="relative flex flex-1 flex-col items-center justify-center gap-1 py-1"
       >
-        <div className={`flex items-center justify-center w-10 h-7 rounded-full transition-colors ${isActive ? "bg-green-50" : ""}`}>
+        <div
+          className={`flex h-7 w-10 items-center justify-center rounded-full transition-colors ${
+            isActive ? "bg-emerald-50" : ""
+          }`}
+        >
           <Icon
             size={18}
-            className={isActive ? "text-green-600" : "text-gray-400 transition-colors"}
+            className={isActive ? "text-emerald-700" : "text-stone-400 transition-colors"}
             strokeWidth={isActive ? 2.2 : 1.6}
           />
         </div>
-        <span className={`text-[10px] leading-none ${isActive ? "text-green-600 font-semibold" : "text-gray-400 font-medium"}`}>
+        <span
+          className={`text-[10px] leading-none ${
+            isActive ? "font-semibold text-emerald-700" : "font-medium text-stone-400"
+          }`}
+        >
           {tab.label}
         </span>
       </button>
@@ -58,10 +68,10 @@ export default function BottomTabBar() {
 
   return (
     <nav
-      className="fixed right-0 bottom-0 left-0 z-40 bg-white border-t border-gray-200"
+      className="fixed right-0 bottom-0 left-0 z-40 border-t border-stone-200 bg-white"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="flex h-16 items-center justify-around px-2">
+      <div className="mx-auto flex h-16 max-w-xl items-center justify-around px-2">
         {LEFT_TABS.map(renderTab)}
 
         {/* Center FAB */}
@@ -72,7 +82,7 @@ export default function BottomTabBar() {
             aria-label="Quick actions"
             aria-haspopup="true"
             aria-expanded={fabOpen}
-            className={`absolute -top-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-900 shadow-md transition-all hover:bg-gray-800 ${
+            className={`absolute -top-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-900 shadow-md transition-all hover:bg-stone-800 ${
               fabOpen ? "z-50 rotate-45" : ""
             }`}
           >

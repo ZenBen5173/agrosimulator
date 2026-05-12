@@ -1,28 +1,30 @@
 "use client";
 
+/**
+ * AgroSim 2.0 — Profile page.
+ * Clean rewrite: avatar + identity, farm summary, notification toggles,
+ * sign out. Lighter than the 1.0 version (drops the referral history
+ * since 2.0 escalation lives in the diagnosis flow itself).
+ */
+
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  User,
-  MapPin,
-  Phone,
+  ArrowLeft,
   Mail,
-  Download,
-  LogOut,
-  Bell,
-  Pencil,
-  X,
-  Check,
+  Phone,
+  MapPin,
   Sprout,
   Droplets,
-  Layers,
   Ruler,
-  FileText,
+  Bell,
+  Pencil,
+  Check,
+  X,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
-import Card from "@/components/ui/Card";
-import { SkeletonCard, SkeletonLine, SkeletonCircle } from "@/components/ui/Skeleton";
 import toast from "react-hot-toast";
 
 interface ProfileData {
@@ -38,7 +40,6 @@ interface FarmData {
   area_acres: number;
   soil_type: string | null;
   water_source: string | null;
-  grid_size: number;
 }
 
 interface Preferences {
@@ -47,642 +48,342 @@ interface Preferences {
   task_reminders: boolean;
 }
 
-interface ReferralItem {
-  id: string;
-  plot_id: string;
-  status: "pending" | "responded" | "resolved";
-  case_package_json: {
-    crop_name?: string;
-    plot_label?: string;
-    confidence?: number;
-    photo_count?: number;
-    referred_date?: string;
-  };
-  expert_response: string | null;
-  created_at: string;
-  resolved_at: string | null;
-  plots: { label: string; crop_name: string } | null;
-}
-
-function getInitials(name: string | null): string {
+function initials(name: string | null): string {
   if (!name) return "?";
   return name
     .split(" ")
-    .map((w) => w[0])
     .filter(Boolean)
     .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
-function formatLabel(str: string): string {
-  return str
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 export default function ProfilePage() {
   const router = useRouter();
+  const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [farm, setFarm] = useState<FarmData | null>(null);
-  const [preferences, setPreferences] = useState<Preferences>({
+  const [prefs, setPrefs] = useState<Preferences>({
     weather_alerts: true,
     harvest_reminders: true,
     task_reminders: true,
   });
-  const [email, setEmail] = useState<string | null>(null);
 
-  // Edit mode
   const [editing, setEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-  const [editPhone, setEditPhone] = useState("");
+  const [draft, setDraft] = useState<ProfileData>({
+    full_name: "",
+    phone: "",
+    district: "",
+    state: "",
+  });
   const [saving, setSaving] = useState(false);
 
-  // Export state
-  const [exporting, setExporting] = useState(false);
-
-  // Referrals
-  const [referrals, setReferrals] = useState<ReferralItem[]>([]);
-  const [referralsLoading, setReferralsLoading] = useState(true);
-  const [expandedReferral, setExpandedReferral] = useState<string | null>(null);
-
-  // Push notifications
-  const { isSupported: pushSupported, permission: pushPermission, subscription: pushSub, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePushNotifications();
-  const [pushLoading, setPushLoading] = useState(false);
-
-  const fetchProfile = useCallback(async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/profile");
-      if (!res.ok) {
-        if (res.status === 401) {
-          router.push("/auth");
-          return;
-        }
-        throw new Error("Failed to fetch profile");
+      const {
+        data: { user: u },
+      } = await supabase.auth.getUser();
+      if (!u) {
+        router.replace("/");
+        return;
       }
-      const data = await res.json();
-      setProfile(data.profile);
-      setFarm(data.farm);
-      setPreferences(
-        data.preferences || {
-          weather_alerts: true,
-          harvest_reminders: true,
-          task_reminders: true,
-        }
-      );
-      setEmail(data.email);
-    } catch (err) {
-      console.error("Failed to load profile:", err);
-      toast.error("Failed to load profile");
+      setUser({ id: u.id, email: u.email ?? "" });
+
+      const { data: p } = await supabase
+        .from("profiles")
+        .select("full_name, phone, district, state")
+        .eq("id", u.id)
+        .maybeSingle();
+      if (p) {
+        setProfile(p);
+        setDraft(p);
+      }
+
+      const { data: f } = await supabase
+        .from("farms")
+        .select("id, name, area_acres, soil_type, water_source")
+        .eq("user_id", u.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (f) setFarm(f);
+
+      const { data: np } = await supabase
+        .from("notification_preferences")
+        .select("weather_alerts, harvest_reminders, task_reminders")
+        .eq("user_id", u.id)
+        .maybeSingle();
+      if (np) setPrefs(np);
     } finally {
       setLoading(false);
     }
-  }, [router]);
-
-  const fetchReferrals = useCallback(async () => {
-    try {
-      const res = await fetch("/api/referral");
-      if (res.ok) {
-        const data = await res.json();
-        setReferrals(data.referrals || []);
-      }
-    } catch (err) {
-      console.error("Failed to load referrals:", err);
-    } finally {
-      setReferralsLoading(false);
-    }
-  }, []);
+  }, [router, supabase]);
 
   useEffect(() => {
-    fetchProfile();
-    fetchReferrals();
-  }, [fetchProfile, fetchReferrals]);
+    load();
+  }, [load]);
 
-  const startEditing = () => {
-    setEditName(profile?.full_name || "");
-    setEditPhone(profile?.phone || "");
-    setEditing(true);
-  };
-
-  const cancelEditing = () => {
-    setEditing(false);
-  };
-
-  const saveProfile = async () => {
+  async function saveProfile() {
+    if (!user) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: editName.trim(),
-          phone: editPhone.trim(),
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      const data = await res.json();
-      setProfile(data.profile);
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          full_name: draft.full_name,
+          phone: draft.phone,
+          district: draft.district,
+          state: draft.state,
+        })
+        .eq("id", user.id);
+      if (error) throw error;
+      setProfile(draft);
       setEditing(false);
       toast.success("Profile updated");
-    } catch (err) {
-      console.error("Save error:", err);
-      toast.error("Failed to save profile");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const togglePreference = async (
-    key: keyof Preferences,
-    value: boolean
-  ) => {
-    const newPrefs = { ...preferences, [key]: value };
-    setPreferences(newPrefs);
-
+  async function togglePref(key: keyof Preferences) {
+    if (!user) return;
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
     try {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      await supabase.from("notification_preferences").upsert(
-        {
-          user_id: user.id,
-          ...newPrefs,
-        },
-        { onConflict: "user_id" }
-      );
-    } catch (err) {
-      console.error("Failed to save preference:", err);
-      // Revert on error
-      setPreferences((prev) => ({ ...prev, [key]: !value }));
-      toast.error("Failed to save setting");
+      await supabase
+        .from("notification_preferences")
+        .upsert({ user_id: user.id, ...next }, { onConflict: "user_id" });
+    } catch {
+      setPrefs(prefs); // revert
+      toast.error("Couldn't save preference");
     }
-  };
+  }
 
-  const exportReport = async () => {
-    if (!farm) {
-      toast.error("No farm data to export");
-      return;
-    }
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/export/report?farm_id=${farm.id}`);
-      if (!res.ok) throw new Error("Failed to generate report");
-      const data = await res.json();
-
-      // Open report in new window for printing
-      const printWindow = window.open("", "_blank");
-      if (printWindow) {
-        printWindow.document.write(data.html);
-        printWindow.document.close();
-        // Delay print to allow styles to load
-        setTimeout(() => {
-          printWindow.print();
-        }, 500);
-      } else {
-        toast.error("Please allow pop-ups to export the report");
-      }
-    } catch (err) {
-      console.error("Export error:", err);
-      toast.error("Failed to export report");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      router.push("/");
-    } catch (err) {
-      console.error("Sign out error:", err);
-      toast.error("Failed to sign out");
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-4">
-        <div className="mx-auto max-w-md space-y-4">
-          {/* Header skeleton */}
-          <div className="flex flex-col items-center gap-3 py-6">
-            <SkeletonCircle className="h-20 w-20" />
-            <SkeletonLine className="h-5 w-40" />
-            <SkeletonLine className="h-4 w-32" />
-          </div>
-          <SkeletonCard className="h-40" />
-          <SkeletonCard className="h-32" />
-          <SkeletonCard className="h-28" />
-        </div>
-      </div>
-    );
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/");
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
-      <div className="mx-auto max-w-md space-y-4 p-4">
-        {/* ───── Profile Header ───── */}
-        <Card variant="elevated" className="relative overflow-hidden p-6">
-          {/* Green accent bar */}
-          <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-br from-green-500 to-green-600" />
-
-          <div className="relative flex flex-col items-center pt-6">
-            {/* Avatar */}
-            <div
-              className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-green-100 text-2xl font-bold text-green-700 shadow-md"
-              aria-label={`Profile avatar for ${profile?.full_name || "user"}`}
-            >
-              {getInitials(profile?.full_name ?? null)}
-            </div>
-
-            {editing ? (
-              /* ── Edit mode ── */
-              <div className="mt-4 w-full space-y-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-500">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-100"
-                    placeholder="Your full name"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-500">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-100"
-                    placeholder="+60 12-345 6789"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={cancelEditing}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
-                  >
-                    <X size={16} />
-                    Cancel
-                  </button>
-                  <button
-                    onClick={saveProfile}
-                    disabled={saving}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-green-700 disabled:opacity-50"
-                  >
-                    <Check size={16} />
-                    {saving ? "Saving..." : "Save"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* ── Display mode ── */
-              <>
-                <h2 className="mt-4 text-lg font-semibold text-gray-900">
-                  {profile?.full_name || "Set Your Name"}
-                </h2>
-
-                <div className="mt-2 space-y-1.5">
-                  {email && (
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <Mail size={14} className="text-gray-400" aria-hidden="true" />
-                      {email}
-                    </div>
-                  )}
-                  {profile?.phone && (
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <Phone size={14} className="text-gray-400" aria-hidden="true" />
-                      {profile.phone}
-                    </div>
-                  )}
-                  {(profile?.district || profile?.state) && (
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <MapPin size={14} className="text-gray-400" aria-hidden="true" />
-                      {[profile.district, profile.state]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={startEditing}
-                  className="mt-4 flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
-                >
-                  <Pencil size={14} aria-hidden="true" />
-                  Edit Profile
-                </button>
-              </>
-            )}
+    <div className="min-h-screen bg-stone-50 pb-24">
+      <header className="border-b border-stone-200 bg-white px-4 py-3">
+        <div className="mx-auto flex max-w-xl items-center gap-2">
+          <button onClick={() => router.back()} aria-label="Back">
+            <ArrowLeft size={18} className="text-stone-500" />
+          </button>
+          <div>
+            <h1 className="text-lg font-semibold text-stone-900">Profile</h1>
+            <p className="text-[11px] leading-none text-stone-500">
+              Your details and notifications
+            </p>
           </div>
-        </Card>
+        </div>
+      </header>
 
-        {/* ───── Farm Info Card ───── */}
-        {farm && (
-          <Card variant="elevated" className="p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-50">
-                <Sprout size={16} className="text-green-600" aria-hidden="true" />
-              </div>
-              <h3 className="font-semibold text-gray-900">Farm Info</h3>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <InfoRow
-                icon={<Sprout size={14} className="text-gray-400" aria-hidden="true" />}
-                label="Farm Name"
-                value={farm.name || "—"}
-              />
-              <InfoRow
-                icon={<Ruler size={14} className="text-gray-400" aria-hidden="true" />}
-                label="Area"
-                value={farm.area_acres ? `${farm.area_acres.toFixed(1)} acres` : "—"}
-              />
-              <InfoRow
-                icon={<Layers size={14} className="text-gray-400" aria-hidden="true" />}
-                label="Soil Type"
-                value={farm.soil_type ? formatLabel(farm.soil_type) : "—"}
-              />
-              <InfoRow
-                icon={<Droplets size={14} className="text-gray-400" aria-hidden="true" />}
-                label="Water Source"
-                value={farm.water_source ? formatLabel(farm.water_source) : "—"}
-              />
-            </div>
-          </Card>
-        )}
-
-        {/* ───── Notification Settings ───── */}
-        <Card variant="elevated" className="p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50">
-              <Bell size={16} className="text-amber-600" aria-hidden="true" />
-            </div>
-            <h3 className="font-semibold text-gray-900">Notifications</h3>
+      <main className="mx-auto max-w-xl space-y-4 p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={20} className="animate-spin text-emerald-600" />
           </div>
-
-          <div className="space-y-1">
-            <ToggleRow
-              label="Weather Alerts"
-              description="Severe weather and flood risk warnings"
-              checked={preferences.weather_alerts}
-              onChange={(v) => togglePreference("weather_alerts", v)}
-            />
-            <ToggleRow
-              label="Harvest Reminders"
-              description="When crops are ready to harvest"
-              checked={preferences.harvest_reminders}
-              onChange={(v) => togglePreference("harvest_reminders", v)}
-            />
-            <ToggleRow
-              label="Task Reminders"
-              description="Daily task and inspection reminders"
-              checked={preferences.task_reminders}
-              onChange={(v) => togglePreference("task_reminders", v)}
-            />
-
-            {/* Push notifications */}
-            {pushSupported && (
-              <div className="mt-2 border-t border-gray-100 pt-2">
-                {pushPermission === "denied" ? (
-                  <div className="rounded-xl bg-red-50 px-3 py-3">
-                    <div className="text-sm font-medium text-red-700">
-                      Push Notifications Blocked
-                    </div>
-                    <div className="text-xs text-red-500">
-                      Enable in your browser settings to receive alerts
-                    </div>
-                  </div>
-                ) : (
-                  <label className="flex cursor-pointer items-center justify-between rounded-xl px-2 py-3 transition hover:bg-gray-50">
-                    <div className="pr-4">
-                      <div className="text-sm font-medium text-gray-800">
-                        Push Notifications
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        Receive alerts even when app is closed
-                      </div>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        checked={!!pushSub}
-                        disabled={pushLoading}
-                        onChange={async (e) => {
-                          setPushLoading(true);
-                          try {
-                            if (e.target.checked) {
-                              await pushSubscribe();
-                              toast.success("Push notifications enabled");
-                            } else {
-                              await pushUnsubscribe();
-                              toast.success("Push notifications disabled");
-                            }
-                          } catch {
-                            toast.error("Failed to update push settings");
-                          } finally {
-                            setPushLoading(false);
-                          }
-                        }}
-                        className="peer sr-only"
-                        role="switch"
-                        aria-checked={!!pushSub}
-                        aria-label="Push Notifications"
-                      />
-                      <div className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-500" aria-hidden="true" />
-                      <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" aria-hidden="true" />
-                    </div>
-                  </label>
+        ) : (
+          <>
+            {/* Identity */}
+            <section className="rounded-xl border border-stone-200 bg-white p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-lg font-semibold text-emerald-700">
+                  {initials(profile?.full_name ?? null)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-semibold text-stone-900">
+                    {profile?.full_name || "Set your name"}
+                  </p>
+                  <p className="truncate text-xs text-stone-500">
+                    {user?.email}
+                  </p>
+                </div>
+                {!editing && (
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="rounded-lg p-2 hover:bg-stone-100"
+                    aria-label="Edit"
+                  >
+                    <Pencil size={14} className="text-stone-500" />
+                  </button>
                 )}
               </div>
-            )}
-          </div>
-        </Card>
 
-        {/* ───── My Referrals ───── */}
-        <Card variant="elevated" className="p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50">
-              <FileText size={16} className="text-orange-600" aria-hidden="true" />
-            </div>
-            <h3 className="font-semibold text-gray-900">My Referrals</h3>
-          </div>
-
-          {referralsLoading ? (
-            <div className="space-y-2">
-              <div className="h-16 animate-pulse rounded-xl bg-gray-100" />
-              <div className="h-16 animate-pulse rounded-xl bg-gray-100" />
-            </div>
-          ) : referrals.length === 0 ? (
-            <div className="rounded-xl bg-gray-50 px-4 py-6 text-center">
-              <p className="text-sm text-gray-400">No expert referrals yet</p>
-              <p className="mt-1 text-xs text-gray-300">
-                Referrals appear here when AI cannot diagnose a crop issue
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {referrals.map((ref) => {
-                const statusStyles = {
-                  pending: {
-                    badge: "bg-amber-100 text-amber-700",
-                    dot: "bg-amber-400",
-                  },
-                  responded: {
-                    badge: "bg-blue-100 text-blue-700",
-                    dot: "bg-blue-400",
-                  },
-                  resolved: {
-                    badge: "bg-green-100 text-green-700",
-                    dot: "bg-green-400",
-                  },
-                };
-                const style = statusStyles[ref.status];
-                const plotLabel =
-                  ref.plots?.label ||
-                  ref.case_package_json?.plot_label ||
-                  "Unknown";
-                const cropName =
-                  ref.plots?.crop_name ||
-                  ref.case_package_json?.crop_name ||
-                  "Unknown";
-                const date = new Date(ref.created_at).toLocaleDateString(
-                  "en-MY",
-                  { day: "numeric", month: "short", year: "numeric" }
-                );
-                const isExpanded = expandedReferral === ref.id;
-
-                return (
-                  <button
-                    key={ref.id}
-                    onClick={() =>
-                      setExpandedReferral(isExpanded ? null : ref.id)
+              {!editing ? (
+                <div className="mt-4 grid grid-cols-1 gap-2 text-sm">
+                  <Row icon={<Mail size={14} className="text-stone-500" />} label={user?.email ?? ""} />
+                  <Row
+                    icon={<Phone size={14} className="text-stone-500" />}
+                    label={profile?.phone || "No phone"}
+                  />
+                  <Row
+                    icon={<MapPin size={14} className="text-stone-500" />}
+                    label={
+                      [profile?.district, profile?.state].filter(Boolean).join(", ") ||
+                      "No location set"
                     }
-                    aria-expanded={isExpanded}
-                    className="w-full rounded-xl border border-gray-100 bg-gray-50 p-3 text-left transition hover:bg-gray-100"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-800">
-                            {plotLabel}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            {cropName}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-gray-400">{date}</p>
-                      </div>
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${style.dot}`}
-                        />
-                        {ref.status.charAt(0).toUpperCase() +
-                          ref.status.slice(1)}
-                      </span>
-                    </div>
-
-                    {isExpanded && (
-                      <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
-                        {ref.case_package_json?.confidence != null && (
-                          <div className="text-xs text-gray-500">
-                            AI Confidence:{" "}
-                            {Math.round(ref.case_package_json.confidence * 100)}
-                            %
-                          </div>
-                        )}
-                        {ref.case_package_json?.photo_count != null && (
-                          <div className="text-xs text-gray-500">
-                            Photos: {ref.case_package_json.photo_count}
-                          </div>
-                        )}
-                        {ref.expert_response && (
-                          <div className="rounded-lg bg-blue-50 p-2">
-                            <p className="text-[10px] font-medium text-blue-700">
-                              Expert Response:
-                            </p>
-                            <p className="mt-0.5 text-xs text-blue-600">
-                              {ref.expert_response}
-                            </p>
-                          </div>
-                        )}
-                        {ref.resolved_at && (
-                          <div className="text-xs text-green-600">
-                            Resolved:{" "}
-                            {new Date(ref.resolved_at).toLocaleDateString(
-                              "en-MY",
-                              {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              }
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-
-        {/* ───── Actions ───── */}
-        <Card variant="elevated" className="p-5">
-          <div className="space-y-3">
-            <button
-              onClick={exportReport}
-              disabled={exporting || !farm}
-              className="flex w-full items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 text-left text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50">
-                <Download size={16} className="text-blue-600" aria-hidden="true" />
-              </div>
-              <div className="flex-1">
-                <div>{exporting ? "Generating Report..." : "Export Farm Report"}</div>
-                <div className="text-xs font-normal text-gray-400">
-                  Generate printable PDF report
+                  />
                 </div>
-              </div>
-            </button>
-
-            <button
-              onClick={handleSignOut}
-              className="flex w-full items-center gap-3 rounded-xl border border-red-100 px-4 py-3 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50">
-                <LogOut size={16} className="text-red-500" aria-hidden="true" />
-              </div>
-              <div className="flex-1">
-                <div>Sign Out</div>
-                <div className="text-xs font-normal text-gray-400">
-                  Log out of your account
+              ) : (
+                <div className="mt-4 space-y-2">
+                  <Field
+                    label="Full name"
+                    value={draft.full_name ?? ""}
+                    onChange={(v) => setDraft((d) => ({ ...d, full_name: v }))}
+                  />
+                  <Field
+                    label="Phone"
+                    value={draft.phone ?? ""}
+                    onChange={(v) => setDraft((d) => ({ ...d, phone: v }))}
+                  />
+                  <Field
+                    label="District"
+                    value={draft.district ?? ""}
+                    onChange={(v) => setDraft((d) => ({ ...d, district: v }))}
+                  />
+                  <Field
+                    label="State"
+                    value={draft.state ?? ""}
+                    onChange={(v) => setDraft((d) => ({ ...d, state: v }))}
+                  />
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        setEditing(false);
+                        setDraft(profile ?? draft);
+                      }}
+                      className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-stone-300 bg-white py-2 text-sm text-stone-700"
+                    >
+                      <X size={14} /> Cancel
+                    </button>
+                    <button
+                      onClick={saveProfile}
+                      disabled={saving}
+                      className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                      {saving ? "Saving" : "Save"}
+                    </button>
+                  </div>
                 </div>
+              )}
+            </section>
+
+            {/* Farm summary */}
+            {farm && (
+              <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+                <div className="border-b border-stone-100 px-4 py-3">
+                  <h2 className="text-sm font-semibold text-stone-800">
+                    {farm.name ?? "Your farm"}
+                  </h2>
+                </div>
+                <ul className="divide-y divide-stone-100">
+                  <FarmRow
+                    icon={<Ruler size={14} className="text-stone-500" />}
+                    label="Area"
+                    value={`${farm.area_acres.toFixed(1)} acres`}
+                  />
+                  <FarmRow
+                    icon={<Sprout size={14} className="text-emerald-600" />}
+                    label="Soil"
+                    value={farm.soil_type ?? "—"}
+                  />
+                  <FarmRow
+                    icon={<Droplets size={14} className="text-blue-500" />}
+                    label="Water source"
+                    value={farm.water_source ?? "—"}
+                  />
+                </ul>
+              </section>
+            )}
+
+            {/* Notification preferences */}
+            <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+              <div className="border-b border-stone-100 px-4 py-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-800">
+                  <Bell size={14} className="text-stone-500" />
+                  Notifications
+                </h2>
               </div>
+              <ul className="divide-y divide-stone-100">
+                <Toggle
+                  label="Weather alerts"
+                  desc="Heads-up before rain, drought, or temperature swings"
+                  on={prefs.weather_alerts}
+                  onToggle={() => togglePref("weather_alerts")}
+                />
+                <Toggle
+                  label="Harvest reminders"
+                  desc="Time to harvest based on planting date"
+                  on={prefs.harvest_reminders}
+                  onToggle={() => togglePref("harvest_reminders")}
+                />
+                <Toggle
+                  label="Task reminders"
+                  desc="Daily morning push of today's tasks"
+                  on={prefs.task_reminders}
+                  onToggle={() => togglePref("task_reminders")}
+                />
+              </ul>
+            </section>
+
+            {/* Sign out */}
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-medium text-red-600 transition hover:bg-red-50"
+            >
+              <LogOut size={14} />
+              Sign out
             </button>
-          </div>
-        </Card>
-      </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }
 
-/* ───── Sub-components ───── */
+// ── Subcomponents ──
 
-function InfoRow({
+function Row({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-stone-700">
+      {icon}
+      <span className="truncate">{label}</span>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block text-xs">
+      <span className="block text-stone-500 mb-1">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+      />
+    </label>
+  );
+}
+
+function FarmRow({
   icon,
   label,
   value,
@@ -692,46 +393,46 @@ function InfoRow({
   value: string;
 }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
-      <div className="mt-0.5">{icon}</div>
-      <div>
-        <div className="text-[11px] font-medium text-gray-400">{label}</div>
-        <div className="text-sm font-medium text-gray-800">{value}</div>
-      </div>
-    </div>
+    <li className="flex items-center justify-between px-4 py-3 text-sm">
+      <span className="flex items-center gap-2 text-stone-600">
+        {icon}
+        {label}
+      </span>
+      <span className="text-stone-800">{value}</span>
+    </li>
   );
 }
 
-function ToggleRow({
+function Toggle({
   label,
-  description,
-  checked,
-  onChange,
+  desc,
+  on,
+  onToggle,
 }: {
   label: string;
-  description: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
+  desc: string;
+  on: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-xl px-2 py-3 transition hover:bg-gray-50">
-      <div className="pr-4">
-        <div className="text-sm font-medium text-gray-800">{label}</div>
-        <div className="text-xs text-gray-400">{description}</div>
+    <li className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-stone-800">{label}</p>
+        <p className="text-[11px] text-stone-500">{desc}</p>
       </div>
-      <div className="relative">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          className="peer sr-only"
-          role="switch"
-          aria-checked={checked}
-          aria-label={label}
+      <button
+        onClick={onToggle}
+        aria-label={`Toggle ${label}`}
+        className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+          on ? "bg-emerald-500" : "bg-stone-300"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+            on ? "translate-x-5" : "translate-x-0.5"
+          }`}
         />
-        <div className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-500" aria-hidden="true" />
-        <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" aria-hidden="true" />
-      </div>
-    </label>
+      </button>
+    </li>
   );
 }

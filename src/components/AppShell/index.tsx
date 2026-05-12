@@ -4,14 +4,13 @@ import { usePathname } from "next/navigation";
 import BottomTabBar from "@/components/BottomTabBar";
 import { Toaster } from "react-hot-toast";
 
+// Surfaces that genuinely need the full screen: the landing page, auth flow,
+// and onboarding (map drawing). Everything else keeps the bottom tab bar so
+// the user can always navigate away.
 const HIDE_TAB_PATTERNS = [
   "/",
   "/auth",
   "/onboarding",
-  "/inspection",
-  "/planting",
-  "/dev",
-  "/farm/redraw",
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

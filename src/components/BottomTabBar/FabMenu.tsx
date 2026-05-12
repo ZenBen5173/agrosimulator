@@ -4,14 +4,12 @@ import { useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Camera,
-  ClipboardCheck,
-  ScanLine,
+  Stethoscope,
+  Receipt,
+  Users,
   CloudSun,
-  BarChart3,
-  Bell,
+  TrendingUp,
   Settings,
-  FileText,
 } from "lucide-react";
 import { useFarmStore } from "@/stores/farmStore";
 
@@ -23,33 +21,37 @@ interface FabMenuProps {
 interface FabAction {
   key: string;
   label: string;
-  icon: typeof Camera;
+  icon: typeof Stethoscope;
   href: string;
   color: string;
   needsPlot?: boolean;
 }
 
+// AgroSim 2.0 quick actions — one per layer, plus weather context.
 const FAB_GROUPS: { label: string; items: FabAction[] }[] = [
   {
-    label: "Farm",
+    label: "Care",
     items: [
-      { key: "scan", label: "Scan Crop", icon: Camera, href: "/inspection", color: "bg-green-500", needsPlot: true },
-      { key: "prep", label: "Prep List", icon: ClipboardCheck, href: "/prep", color: "bg-emerald-500" },
+      { key: "inspect", label: "Inspect Plant", icon: Stethoscope, href: "/inspection/v2", color: "bg-emerald-500", needsPlot: true },
     ],
   },
   {
-    label: "Accounts",
+    label: "Books",
     items: [
-      { key: "scandoc", label: "Scan Doc", icon: ScanLine, href: "/accounts/scan", color: "bg-violet-500" },
-      { key: "business", label: "Documents", icon: FileText, href: "/business", color: "bg-cyan-500" },
+      { key: "scan_receipt", label: "Scan Receipt", icon: Receipt, href: "/receipts", color: "bg-violet-500" },
+    ],
+  },
+  {
+    label: "Pact",
+    items: [
+      { key: "groupbuy", label: "Group Buys", icon: Users, href: "/market", color: "bg-amber-500" },
+      { key: "prices", label: "Price Check", icon: TrendingUp, href: "/market", color: "bg-indigo-500" },
     ],
   },
   {
     label: "Info",
     items: [
       { key: "weather", label: "Weather", icon: CloudSun, href: "/weather", color: "bg-sky-500" },
-      { key: "market", label: "Market", icon: BarChart3, href: "/market", color: "bg-indigo-500" },
-      { key: "alerts", label: "Alerts", icon: Bell, href: "/alerts", color: "bg-red-500" },
     ],
   },
 ];

@@ -3,43 +3,48 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CalendarCheck,
-  MessageCircle,
-  ScanLine,
-  FileText,
+  Stethoscope,
+  Receipt,
+  Users,
+  TrendingUp,
   Sparkles,
   ArrowRight,
   Loader2,
   Wrench,
+  RotateCcw,
 } from "lucide-react";
 
 const FEATURES = [
   {
-    icon: CalendarCheck,
-    title: "Morning Briefing",
-    desc: "Tasks, prep list, weather, and alerts — everything before you leave home.",
+    icon: Stethoscope,
+    title: "Doctor-style diagnosis",
+    desc: "Photograph a sick plant. AgroSim rules out alternatives, asks for one confirmation test, and admits when it doesn't know.",
   },
   {
-    icon: MessageCircle,
-    title: "AI Chat-to-Action",
-    desc: "Tell the AI what you need. It creates tasks, orders supplies, and updates records.",
+    icon: Receipt,
+    title: "Receipt scanning",
+    desc: "Photo any agri-shop receipt — BM, English, handwritten, thermal, phone screenshot. Inventory updates in seconds.",
   },
   {
-    icon: ScanLine,
-    title: "Scan Any Document",
-    desc: "Photo a receipt or bill. AI reads it, updates inventory, files the expense.",
+    icon: TrendingUp,
+    title: "Anonymous price benchmark",
+    desc: "Other chilli farmers in your district got RM 4.20 this week. You sold at RM 3.80. Now you know.",
   },
   {
-    icon: FileText,
-    title: "Full Business Suite",
-    desc: "Sales orders, invoices, inventory, equipment, depreciation — like AutoCount but AI-powered.",
+    icon: Users,
+    title: "Group buying",
+    desc: "Five farmers in your kampung want NPK? AgroSim pools the order and gets the bulk price.",
   },
 ];
 
+const DEMO_EMAIL = "demo@agrosim.app";
+const DEV_EMAIL = "dev@agrosim.app";
 
 export default function LandingPage() {
   const router = useRouter();
   const [entering, setEntering] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const handleEnter = async (email: string, startTour = false) => {
@@ -52,7 +57,11 @@ export default function LandingPage() {
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      if (data.error) { setError(data.error); setEntering(null); return; }
+      if (data.error) {
+        setError(data.error);
+        setEntering(null);
+        return;
+      }
       const url = startTour ? `${data.callbackUrl}&tour=1` : data.callbackUrl;
       router.push(url);
     } catch {
@@ -61,53 +70,107 @@ export default function LandingPage() {
     }
   };
 
+  const handleResetOnly = async () => {
+    setResetting(true);
+    setResetMsg(null);
+    setError("");
+    try {
+      const res = await fetch("/api/demo/reset", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Reset failed");
+      setResetMsg(
+        `Reset complete — ${data.seeded.plots} plots, ${data.seeded.inventoryItems} inventory items, ${data.seeded.diagnoses} diagnoses, ${data.seeded.groupBuys} group buys, ${data.seeded.farmerSales} sales seeded.`
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Reset failed");
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Hero */}
       <div className="px-6 pt-16 pb-8">
         <div className="flex items-center gap-2 mb-6">
-          <Sparkles size={20} className="text-green-600" />
-          <span className="text-[10px] font-semibold text-green-600 uppercase tracking-widest">AI-Powered Farm Management</span>
+          <Sparkles size={20} className="text-emerald-600" />
+          <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-widest">
+            AgroSim 2.0
+          </span>
         </div>
 
         <h1 className="text-4xl font-bold text-gray-900 leading-tight">
-          AgroSim
+          Stop farming alone.
         </h1>
         <p className="text-lg text-gray-500 mt-2 leading-relaxed">
-          Built for Malaysian smallholder farmers.
+          A silent business partner for Malaysian smallholders.
         </p>
 
         <p className="text-sm text-gray-400 mt-4 leading-relaxed">
-          Replace your notebook, receipt box, weather app, and spreadsheet — all in one AI-powered app.
+          Three layers, deeply integrated:
+          <strong className="text-gray-700"> Care</strong> watches your crops,
+          <strong className="text-gray-700"> Books</strong> keeps the receipts,
+          <strong className="text-gray-700"> Pact</strong> connects you to
+          neighbours so middlemen stop squeezing you.
         </p>
 
-        {/* Judge entry — starts guided tour */}
+        {/* Demo entry */}
         <button
-          onClick={() => handleEnter("demo@agrosim.app", true)}
-          disabled={entering !== null}
+          onClick={() => handleEnter(DEMO_EMAIL, true)}
+          disabled={entering !== null || resetting}
           className="mt-8 w-full flex items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 text-sm font-semibold text-white disabled:opacity-60 transition-all hover:bg-gray-800"
         >
-          {entering === "demo@agrosim.app" ? (
-            <><Loader2 size={16} className="animate-spin" /> Entering...</>
+          {entering === DEMO_EMAIL ? (
+            <>
+              <Loader2 size={16} className="animate-spin" /> Entering…
+            </>
           ) : (
-            <>Enter App <ArrowRight size={16} /></>
+            <>
+              Enter the demo <ArrowRight size={16} />
+            </>
           )}
         </button>
 
-        {/* Dev/testing entry — no tour */}
+        {/* Reset only — wipes + reseeds the demo account, stays on landing */}
         <button
-          onClick={() => handleEnter("dev@agrosim.app")}
-          disabled={entering !== null}
+          onClick={handleResetOnly}
+          disabled={entering !== null || resetting}
+          className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 py-3 text-xs font-medium text-amber-800 disabled:opacity-60 hover:bg-amber-100"
+        >
+          {resetting ? (
+            <>
+              <Loader2 size={14} className="animate-spin" /> Resetting…
+            </>
+          ) : (
+            <>
+              <RotateCcw size={12} /> Reset demo data
+            </>
+          )}
+        </button>
+        {resetMsg && (
+          <p className="mt-2 text-[11px] text-emerald-700 text-center">{resetMsg}</p>
+        )}
+
+        {/* Dev button (small, for development sign-in) */}
+        <button
+          onClick={() => handleEnter(DEV_EMAIL)}
+          disabled={entering !== null || resetting}
           className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-xs font-medium text-gray-500 disabled:opacity-60 hover:bg-gray-50"
         >
-          {entering === "dev@agrosim.app" ? (
-            <><Loader2 size={14} className="animate-spin" /> Entering...</>
+          {entering === DEV_EMAIL ? (
+            <>
+              <Loader2 size={14} className="animate-spin" /> Entering…
+            </>
           ) : (
-            <><Wrench size={12} /> Dev / Testing</>
+            <>
+              <Wrench size={12} /> Dev sign-in (no tour)
+            </>
           )}
         </button>
 
-        {error && <p className="mt-3 text-xs text-red-500 text-center">{error}</p>}
+        {error && (
+          <p className="mt-3 text-xs text-red-500 text-center">{error}</p>
+        )}
       </div>
 
       {/* Divider */}
@@ -115,18 +178,24 @@ export default function LandingPage() {
 
       {/* Features */}
       <div className="px-6 py-8 space-y-4">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">What You Get</p>
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+          What you get
+        </p>
 
         {FEATURES.map((f) => {
           const Icon = f.icon;
           return (
             <div key={f.title} className="flex gap-3">
-              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-50 flex items-center justify-center">
-                <Icon size={18} className="text-gray-500" />
+              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <Icon size={18} className="text-emerald-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800">{f.title}</p>
-                <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{f.desc}</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {f.title}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                  {f.desc}
+                </p>
               </div>
             </div>
           );
@@ -144,7 +213,6 @@ export default function LandingPage() {
           </p>
         </div>
       </div>
-
     </div>
   );
 }

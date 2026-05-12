@@ -2,49 +2,30 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2,
   ChevronRight,
   AlertTriangle,
-  AlertCircle,
   Wind,
   Droplets,
-  Clock,
   ThumbsUp,
   Minus,
   ThumbsDown,
   Package,
-  ChevronDown,
-  ScanLine,
-  BarChart3,
-  Bell,
-  FileText,
-  Activity,
-  Wrench,
-  CloudSun,
+  Stethoscope,
+  Receipt,
+  Users,
+  Sparkles,
 } from "lucide-react";
-import AISummary from "@/components/ui/AISummary";
 import CoachMarks from "@/components/ui/CoachMarks";
 import { createClient } from "@/lib/supabase/client";
 import { useFarmStore } from "@/stores/farmStore";
 import FarmSwitcher from "@/components/home/FarmSwitcher";
 import NotificationBell from "@/components/NotificationBell";
 import { SkeletonCard, SkeletonLine } from "@/components/ui/Skeleton";
-import type { TaskData } from "@/types/farm";
 import toast from "react-hot-toast";
 
 // ── Interfaces ──
-
-interface WeatherData {
-  condition: string;
-  temp_celsius: number;
-  humidity_pct: number;
-  rainfall_mm: number;
-  wind_kmh: number;
-  uv_index?: number;
-  forecast: { date: string; condition: string; temp_min: number; temp_max: number; rain_chance: number }[];
-}
 
 interface PlotResourceNeed {
   label: string;
@@ -92,16 +73,12 @@ interface DiagnosisSession {
   plots: { label: string; crop_name: string } | null;
 }
 
-// ── Constants (no emojis) ──
-
-const CONDITION_LABEL: Record<string, string> = {
-  sunny: "Sunny", overcast: "Cloudy", rainy: "Rainy", thunderstorm: "Storm", drought: "Drought", flood_risk: "Flood Risk",
-};
+// ── Constants ──
 
 const PRIORITY_BADGE: Record<string, { label: string; cls: string }> = {
   urgent: { label: "URG", cls: "bg-red-100 text-red-700" },
   normal: { label: "NRM", cls: "bg-amber-50 text-amber-600" },
-  low: { label: "LOW", cls: "bg-gray-100 text-gray-500" },
+  low: { label: "LOW", cls: "bg-stone-100 text-stone-500" },
 };
 
 // ── Main ──
@@ -119,8 +96,11 @@ export default function HomePage() {
   const [alerts, setAlerts] = useState<FarmAlert[]>([]);
   const [treatments, setTreatments] = useState<DiagnosisSession[]>([]);
   const [lowStock, setLowStock] = useState<InventoryItem[]>([]);
-  const [expandedTask, setExpandedTask] = useState<string | null>(null);
   const [showTour, setShowTour] = useState(false);
+  // prepList + alerts are retained as state (filled by data layer below) so we
+  // can re-introduce their UI surfaces in a later iteration without changing
+  // the loading code. They're intentionally not rendered in the current 2.0 home.
+  void prepList; void alerts; void setPrepList; void setAlerts;
 
   // Start tour if ?tour=1 param present (from landing page)
   useEffect(() => {
@@ -129,6 +109,29 @@ export default function HomePage() {
       const timer = setTimeout(() => setShowTour(true), 1200);
       return () => clearTimeout(timer);
     }
+  }, []);
+
+  // If ?reset=1 (from "Reset to baseline + enter" on landing), wipe + reseed
+  // demo data, then strip the param and reload so the page picks up the seed.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("reset") !== "1") return;
+    (async () => {
+      try {
+        const res = await fetch("/api/demo/reset", { method: "POST" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          toast.error(`Reset failed: ${data?.error ?? res.statusText}`);
+        } else {
+          toast.success("Demo data reset to baseline");
+        }
+      } catch {
+        toast.error("Reset failed (network)");
+      }
+      params.delete("reset");
+      const next = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+      window.location.replace(next);
+    })();
   }, []);
 
   // ── Data Loading ──
@@ -177,23 +180,16 @@ export default function HomePage() {
           sessionStorage.setItem(AI_THROTTLE_KEY, String(now));
           fetch("/api/tasks/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ farm_id: farmRow.id }) })
             .then((r) => r.ok ? r.json() : null).then((d) => { if (d?.tasks) store.setTasks(d.tasks); }).catch(() => {});
-          fetch("/api/plots/recalculate-risk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ farm_id: farmRow.id }) }).catch(() => {});
+          // 2.0: skip the legacy risk recalc — handled by Care layer plot-specific risk now
         } else {
           fetch(`/api/tasks/list?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => { if (d?.tasks) store.setTasks(d.tasks); }).catch(() => {});
         }
 
-        fetch(`/api/prep-list?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => { if (d) setPrepList(d); }).catch(() => {});
+        // 2.0: prep-list and farm_alerts are cut features — UI sections render empty when state stays []
         fetch(`/api/inventory?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => {
           if (d && Array.isArray(d)) {
             setInventory(d);
             setLowStock(d.filter((i: InventoryItem) => i.reorder_threshold && i.current_quantity <= i.reorder_threshold).slice(0, 5));
-          }
-        }).catch(() => {});
-        fetch(`/api/alerts?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => { if (d && Array.isArray(d)) setAlerts(d.filter((a: FarmAlert) => a.severity === "critical" || a.severity === "high").slice(0, 3)); }).catch(() => {});
-        fetch(`/api/diagnosis?farm_id=${farmRow.id}`).then((r) => r.ok ? r.json() : null).then((d) => {
-          if (d && Array.isArray(d)) {
-            const today = new Date().toISOString().split("T")[0];
-            setTreatments(d.filter((s: DiagnosisSession) => s.follow_up_due && s.follow_up_due <= today && s.follow_up_status === "pending").slice(0, 3));
           }
         }).catch(() => {});
       } catch (err) {
@@ -214,10 +210,14 @@ export default function HomePage() {
     } catch { toast.error("Failed"); }
   }, [store]);
 
-  const handleFollowUp = useCallback(async (sessionId: string, status: "better" | "same" | "worse") => {
+  const handleFollowUp = useCallback(async (followupId: string, status: "better" | "same" | "worse") => {
     try {
-      await fetch("/api/diagnosis", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: sessionId, status }) });
-      setTreatments((prev) => prev.filter((t) => t.id !== sessionId));
+      await fetch("/api/diagnosis/v2/followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ followupId, status }),
+      });
+      setTreatments((prev) => prev.filter((t) => t.id !== followupId));
       if (status === "better") toast.success("Treatment worked");
       else if (status === "same") toast("Recheck scheduled");
       else toast.error("Escalating to expert");
@@ -240,7 +240,7 @@ export default function HomePage() {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50 px-6">
         <div className="text-center">
-          <AlertCircle size={40} className="mx-auto mb-3 text-gray-300" />
+          <AlertTriangle size={40} className="mx-auto mb-3 text-gray-300" />
           <p className="text-base text-gray-600">{loadError ? "Unable to load your farm." : "No farm found."}</p>
           <button onClick={() => loadError ? window.location.reload() : router.push("/onboarding")} className="mt-4 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white">
             {loadError ? "Retry" : "Set up farm"}
@@ -294,156 +294,155 @@ export default function HomePage() {
     }
   }
 
+  // Find the most urgent plot for the hero card (red > orange > yellow > none)
+  const urgentPlot = (() => {
+    const ranked = [...plots].sort((a, b) => {
+      const order: Record<string, number> = { red: 3, orange: 2, yellow: 1, none: 0 };
+      return (order[b.warning_level ?? "none"] ?? 0) - (order[a.warning_level ?? "none"] ?? 0);
+    });
+    return ranked[0]?.warning_level && ranked[0].warning_level !== "none" ? ranked[0] : null;
+  })();
+
+  const quickLinks = [
+    { label: "Inspect", desc: "Plant doctor", href: "/inspection/v2", icon: Stethoscope },
+    { label: "Receipt", desc: "Scan a bill", href: "/receipts", icon: Receipt },
+    { label: "Pact", desc: "Prices + group buys", href: "/market", icon: Users },
+    { label: "Books", desc: "Inventory + sales", href: "/inventory", icon: Package },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-stone-50 pb-24">
       {/* ── Header ── */}
-      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-lg border-b border-gray-100 px-4 py-3">
-        <div className="flex items-center justify-between">
+      <header className="sticky top-0 z-20 border-b border-stone-200 bg-white/90 backdrop-blur-lg px-4 py-3">
+        <div className="mx-auto flex max-w-xl items-center justify-between">
           {farms.length > 1 ? <FarmSwitcher /> : (
-            <h1 className="text-base font-semibold text-gray-900">Today</h1>
+            <div>
+              <h1 className="text-lg font-semibold text-stone-900">Today</h1>
+              <p className="text-[11px] text-stone-500 leading-none">{farm?.name ?? "Your farm"}</p>
+            </div>
           )}
           <NotificationBell />
         </div>
-      </div>
+      </header>
 
-      <div className="px-4 pt-3 space-y-3">
+      <main className="mx-auto max-w-xl px-4 py-6 space-y-8">
 
-        {/* ── Alert Banner ── */}
-        {alerts.length > 0 && (
-          <button onClick={() => router.push("/alerts")} className="w-full rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 flex items-center gap-2 text-left">
-            <AlertTriangle size={15} className="text-red-500 flex-shrink-0" />
-            <span className="text-xs font-semibold text-red-700 flex-1 truncate">{alerts[0].title}</span>
-            <span className="text-[10px] text-red-500 font-medium">{alerts.length}</span>
-            <ChevronRight size={14} className="text-red-400" />
-          </button>
+        {/* ── Today summary (AI + most-urgent plot, grouped together) ── */}
+        {(dailySummary || urgentPlot) && (
+          <section className="space-y-3">
+            <p className="px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+              Today
+            </p>
+
+            {dailySummary && (
+              <div data-tour="ai-summary" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-emerald-700">
+                  <Sparkles size={12} />
+                  <span className="font-semibold">AI Summary</span>
+                  <span className="ml-auto text-[10px] font-normal normal-case text-stone-400">
+                    via Vertex AI
+                  </span>
+                </div>
+                <p className="text-sm leading-relaxed text-stone-800">{dailySummary}</p>
+              </div>
+            )}
+
+            {urgentPlot && (
+              <button
+                onClick={() => router.push(`/inspection/v2?plot_id=${urgentPlot.id}`)}
+                className="block w-full rounded-xl border border-amber-300 bg-amber-50 p-4 text-left transition hover:border-amber-400"
+              >
+                <div className="mb-1 flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-700" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                    Needs your attention
+                  </span>
+                </div>
+                <h2 className="text-base font-semibold text-stone-900">
+                  {urgentPlot.label}: {urgentPlot.crop_name}
+                </h2>
+                {urgentPlot.warning_level === "yellow" && (
+                  <p className="mt-0.5 text-xs text-stone-700">
+                    Anthracnose risk after recent rain — inspect today.
+                  </p>
+                )}
+                {urgentPlot.warning_level === "orange" && (
+                  <p className="mt-0.5 text-xs text-stone-700">
+                    Elevated disease risk — please inspect.
+                  </p>
+                )}
+                {urgentPlot.warning_level === "red" && (
+                  <p className="mt-0.5 text-xs text-stone-700">
+                    Critical risk — inspect immediately.
+                  </p>
+                )}
+                <div className="mt-3 inline-flex items-center gap-1 rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-medium text-white">
+                  Inspect now <ChevronRight size={14} />
+                </div>
+              </button>
+            )}
+          </section>
         )}
 
-        {/* ── AI Summary ── */}
-        {dailySummary && <div data-tour="ai-summary"><AISummary>{dailySummary}</AISummary></div>}
-
-        {/* ── Quick Links ── */}
-        <div data-tour="quick-links">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick Links</p>
-          <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 no-scrollbar">
-            {[
-              { label: "Scan Doc", desc: "Photo a bill", href: "/accounts/scan", icon: ScanLine },
-              { label: "Market", desc: "Crop prices", href: "/market", icon: BarChart3 },
-              { label: "Alerts", desc: "Warnings", href: "/alerts", icon: Bell },
-              { label: "Inventory", desc: "Stock levels", href: "/inventory", icon: Package },
-              { label: "Documents", desc: "SO, PO, INV", href: "/business", icon: FileText },
-              { label: "Activity", desc: "Farm events", href: "/activity", icon: Activity },
-              { label: "Equipment", desc: "Depreciation", href: "/equipment", icon: Wrench },
-              { label: "Weather", desc: "Full forecast", href: "/weather", icon: CloudSun },
-            ].map((link) => {
+        {/* ── Shortcuts (separate conceptual section from Today) ── */}
+        <section data-tour="quick-links">
+          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+            Shortcuts
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {quickLinks.map((link) => {
               const Icon = link.icon;
               return (
-                <button key={link.label} onClick={() => router.push(link.href)}
-                  className="flex-shrink-0 w-24 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:bg-gray-50 transition-colors">
-                  <Icon size={16} className="text-gray-400 mb-1.5" />
-                  <p className="text-xs font-medium text-gray-800">{link.label}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{link.desc}</p>
+                <button
+                  key={link.label}
+                  onClick={() => router.push(link.href)}
+                  className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-left transition hover:border-emerald-400"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50">
+                    <Icon size={18} className="text-emerald-700" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-stone-800">{link.label}</span>
+                    <span className="block truncate text-[11px] text-stone-500">{link.desc}</span>
+                  </span>
                 </button>
               );
             })}
           </div>
-        </div>
+        </section>
 
-        {/* ── Weather — Today Hourly ── */}
-        {weather && (() => {
-          const baseTemp = weather.temp_celsius;
-          const hours = Array.from({ length: 24 }, (_, h) => {
-            const curve = Math.sin(((h - 5) / 24) * Math.PI * 2) * 0.4 + 0.1;
-            const temp = Math.round(baseTemp + curve * 6 - 3);
-            const rainBase = weather.condition === "rainy" ? 60 : weather.condition === "thunderstorm" ? 80 : 10;
-            const afternoonBoost = h >= 14 && h <= 18 ? 25 : 0;
-            const rain = Math.min(100, Math.max(0, rainBase + afternoonBoost + Math.round((Math.sin(h * 0.7) * 15))));
-            return { hour: h, temp, rain };
-          });
-          const now = new Date().getHours();
-          const upcoming = hours.slice(now, Math.min(now + 12, 24));
-          const temps = upcoming.map((h) => h.temp);
-          const minT = Math.min(...temps) - 1;
-          const maxT = Math.max(...temps) + 1;
-          const range = maxT - minT;
-
-          // Curve points: each column is 48px wide, chart is 60px tall
-          const colW = 48;
-          const chartH = 60;
-          const pad = 6;
-          const totalW = upcoming.length * colW;
-          const curvePoints = upcoming.map((h, i) => {
-            const x = i * colW + colW / 2;
-            const y = pad + (chartH - 2 * pad) * (1 - (h.temp - minT) / range);
-            return { x, y };
-          });
-          const polyline = curvePoints.map((p) => `${p.x},${p.y}`).join(" ");
-          const polygon = `0,${chartH} ${polyline} ${totalW},${chartH}`;
-
-          const fmt12 = (h: number) => h === now ? "Now" : h === 0 ? "12am" : h === 12 ? "12pm" : h > 12 ? `${h - 12}pm` : `${h}am`;
-
-          return (
-            <div data-tour="weather" className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-gray-900">{weather.temp_celsius}&deg;</span>
-                  <span className="text-xs text-gray-500">{CONDITION_LABEL[weather.condition] || weather.condition}</span>
-                  {weather.rainfall_mm > 0 && <span className="text-[10px] text-blue-500">{weather.rainfall_mm}mm</span>}
-                </div>
-                <div className="flex items-center gap-3 text-[10px] text-gray-400">
-                  <span className="flex items-center gap-1"><Droplets size={11} /> {weather.humidity_pct}%</span>
-                  <span className="flex items-center gap-1"><Wind size={11} /> {weather.wind_kmh}</span>
-                </div>
+        {/* ── Weather (its own little section so it visually sits apart) ── */}
+        {weather && (
+          <section>
+            <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+              Weather
+            </p>
+            <button
+              data-tour="weather"
+              onClick={() => router.push("/weather")}
+              className="flex w-full items-center justify-between rounded-xl border border-stone-200 bg-white p-4 text-left transition hover:border-emerald-400"
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-semibold text-stone-900">
+                  {Math.round(weather.temp_celsius)}°
+                </span>
+                <span className="text-sm capitalize text-stone-600">
+                  {weather.condition}
+                </span>
               </div>
-
-              {/* Scrollable hourly strip with integrated curve */}
-              <div className="overflow-x-auto no-scrollbar">
-                <div style={{ width: totalW }} className="relative">
-                  {/* SVG curve behind the columns */}
-                  <svg width={totalW} height={chartH} className="absolute inset-0">
-                    <defs>
-                      <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.03" />
-                      </linearGradient>
-                    </defs>
-                    <polygon points={polygon} fill="url(#tg)" />
-                    <polyline points={polyline} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    {curvePoints.map((p, i) => (
-                      <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="#f59e0b" />
-                    ))}
-                  </svg>
-
-                  {/* Hour columns on top of curve */}
-                  <div className="relative flex" style={{ height: chartH + 36 }}>
-                    {upcoming.map((h, i) => (
-                      <div key={h.hour} className="flex flex-col items-center justify-end" style={{ width: colW }}>
-                        {/* Temp label above dot */}
-                        <span
-                          className="text-[10px] font-semibold text-gray-700"
-                          style={{ marginBottom: chartH - curvePoints[i].y + 2 }}
-                        >
-                          {h.temp}&deg;
-                        </span>
-                        {/* spacer to push time label to bottom */}
-                        <div className="flex-1" />
-                        {/* Time label */}
-                        <span className="text-[9px] text-gray-400 pb-1">{fmt12(h.hour)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <div className="flex items-center gap-3 text-xs text-stone-500">
+                <span className="flex items-center gap-1">
+                  <Droplets size={12} /> {Math.round(weather.humidity_pct)}%
+                </span>
+                <span className="flex items-center gap-1">
+                  <Wind size={12} /> {Math.round(weather.wind_kmh)}
+                </span>
+                <ChevronRight size={14} className="text-stone-300" />
               </div>
-
-              {/* Link to full weather page */}
-              <button onClick={() => router.push("/weather")} className="w-full px-3 py-2 text-[11px] text-green-600 font-medium text-left border-t border-gray-100 hover:bg-gray-50">
-                View full forecast and spray conditions
-              </button>
-            </div>
-          );
-        })()}
-
-        {/* ── Resources Needed Today ── */}
+            </button>
+          </section>
+        )}
+        {/* ── Resources Needed Today (1.0 prep-list, only renders if prepList loaded) ── */}
         {resourceRows.length > 0 && (
           <div data-tour="resources" className="rounded-lg border border-gray-200 bg-white overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
@@ -478,158 +477,148 @@ export default function HomePage() {
                 ))}
               </tbody>
             </table>
-            <button onClick={() => router.push("/prep")} className="w-full px-3 py-2 text-[11px] text-green-600 font-medium text-left border-t border-gray-100 hover:bg-gray-50">
-              View full breakdown per plot
+            <button onClick={() => router.push("/inventory")} className="w-full px-3 py-2 text-[11px] text-green-600 font-medium text-left border-t border-gray-100 hover:bg-gray-50">
+              View full inventory
             </button>
           </div>
         )}
 
-        {/* ── Tasks — Compact Datatable ── */}
-        <div data-tour="tasks" className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+        {/* ── Tasks ── */}
+        <section data-tour="tasks">
+          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+            Tasks
+          </p>
+          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+          <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Tasks</span>
-              <span className="text-[8px] text-gray-300 bg-gray-50 px-1 py-0.5 rounded">Gemini</span>
+              <h2 className="text-sm font-semibold text-stone-800">Today&apos;s tasks</h2>
               {urgentCount > 0 && (
-                <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">{urgentCount} urgent</span>
+                <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                  {urgentCount} urgent
+                </span>
               )}
             </div>
-            <span className="text-[10px] text-gray-400">{incompleteTasks.length} remaining</span>
+            <span className="text-xs text-stone-400">{incompleteTasks.length} remaining</span>
           </div>
 
           {incompleteTasks.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs text-gray-400">No tasks for today</div>
+            <div className="px-4 py-8 text-center text-sm text-stone-400">All clear today.</div>
           ) : (
-            <div>
-              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 text-[10px] text-gray-400 font-medium">
-                <span className="w-5" />
-                <span className="flex-1">Task</span>
-                <span>Plot</span>
-                <span className="w-8">Pri</span>
-                <span className="w-3" />
-              </div>
-              {incompleteTasks.slice(0, 10).map((task) => {
+            <ul className="divide-y divide-stone-100">
+              {incompleteTasks.slice(0, 8).map((task) => {
                 const badge = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.normal;
-                const isExpanded = expandedTask === task.id;
-                const taskExt = task as TaskData & { resource_item?: string; resource_quantity?: number; resource_unit?: string; timing_recommendation?: string };
+                const isUrgent = task.priority === "urgent";
                 return (
-                  <div key={task.id} className="border-b border-gray-50 last:border-0">
-                    <div
-                      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50/50 transition-colors"
-                      onClick={() => setExpandedTask(isExpanded ? null : task.id)}
+                  <li key={task.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-stone-50">
+                    <button
+                      onClick={(e) => handleCompleteTask(task.id, e)}
+                      className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-[1.5px] border-stone-300 transition-colors hover:border-emerald-500 hover:bg-emerald-50"
+                      aria-label={`Mark ${task.title} as done`}
                     >
-                      {/* Checkbox */}
-                      <button
-                        onClick={(e) => handleCompleteTask(task.id, e)}
-                        className="w-5 h-5 rounded-full border-[1.5px] border-gray-300 flex items-center justify-center flex-shrink-0 hover:border-green-500 hover:bg-green-50 transition-colors"
-                      >
-                        <CheckCircle2 size={10} className="text-transparent" />
-                      </button>
-                      {/* Title */}
-                      <span className="flex-1 text-xs text-gray-800 leading-snug">{task.title}</span>
-                      {/* Plot label */}
-                      {task.plot_label && (
-                        <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-mono flex-shrink-0">{task.plot_label}</span>
+                      <CheckCircle2 size={10} className="text-transparent" />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm leading-snug ${isUrgent ? "font-medium text-stone-900" : "text-stone-700"}`}>
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p className="mt-0.5 truncate text-[11px] text-stone-500">{task.description}</p>
                       )}
-                      {/* Priority */}
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${badge.cls}`}>{badge.label}</span>
-                      {/* Expand indicator */}
-                      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.15 }}>
-                        <ChevronDown size={12} className="text-gray-300" />
-                      </motion.div>
                     </div>
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="px-3 pb-2 text-xs text-gray-500 border-t border-gray-50 bg-gray-50/30"
-                        >
-                          <p className="pt-2">{task.description}</p>
-                          {taskExt.resource_item && (
-                            <p className="mt-1 text-green-600 font-medium">
-                              {taskExt.resource_quantity} {taskExt.resource_unit} {taskExt.resource_item}
-                            </p>
-                          )}
-                          {taskExt.timing_recommendation && (
-                            <p className="mt-0.5 text-gray-400">{taskExt.timing_recommendation}</p>
-                          )}
-                          <p className="mt-1 text-[10px] text-gray-300">Type: {task.task_type} | Triggered by: {task.triggered_by || "schedule"}</p>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                    {task.plot_label && (
+                      <span className="flex-shrink-0 rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-500">
+                        {task.plot_label}
+                      </span>
+                    )}
+                    <span className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`}>
+                      {badge.label}
+                    </span>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
-        </div>
+          </div>
+        </section>
 
-        {/* ── Follow-ups (treatments + unread chats + pending docs) ── */}
-        {(treatments.length > 0 || alerts.length > 0) && (
-          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-1.5">
-              <Clock size={13} className="text-amber-500" />
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Follow-ups</span>
+        {/* ── Treatment follow-ups ── */}
+        {treatments.length > 0 && (
+          <section>
+            <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+              Treatment check-ins
+            </p>
+            <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+              5-day follow-up — better, same, or worse?
             </div>
-
-            {/* Treatment follow-ups */}
             {treatments.map((t) => (
-              <div key={t.id} className="px-3 py-2.5 border-b border-gray-50 last:border-0">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-medium text-gray-800">{t.plots?.label}: {t.diagnosis_name || "Treatment check"}</span>
-                  <span className="text-[9px] text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded font-medium">Treatment</span>
-                </div>
-                <div className="flex gap-1.5">
+              <div key={t.id} className="rounded-lg bg-white p-3">
+                <p className="mb-2 text-sm font-medium text-stone-800">
+                  {t.plots?.label}: {t.diagnosis_name || "Treatment check"}
+                </p>
+                <div className="grid grid-cols-3 gap-2">
                   {(["better", "same", "worse"] as const).map((status) => {
-                    const cfg = { better: { icon: ThumbsUp, cls: "bg-green-600 text-white" }, same: { icon: Minus, cls: "bg-amber-500 text-white" }, worse: { icon: ThumbsDown, cls: "bg-red-500 text-white" } }[status];
+                    const cfg = {
+                      better: { icon: ThumbsUp, cls: "bg-emerald-600 hover:bg-emerald-700" },
+                      same: { icon: Minus, cls: "bg-amber-500 hover:bg-amber-600" },
+                      worse: { icon: ThumbsDown, cls: "bg-red-500 hover:bg-red-600" },
+                    }[status];
                     const Icon = cfg.icon;
                     return (
-                      <button key={status} onClick={() => handleFollowUp(t.id, status)}
-                        className={`flex-1 ${cfg.cls} py-1.5 rounded text-[10px] font-medium flex items-center justify-center gap-1`}>
-                        <Icon size={11} /> {status.charAt(0).toUpperCase() + status.slice(1)}
+                      <button
+                        key={status}
+                        onClick={() => handleFollowUp(t.id, status)}
+                        className={`flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-medium text-white transition ${cfg.cls}`}
+                      >
+                        <Icon size={12} />
+                        <span className="capitalize">{status}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
             ))}
-
-            {/* Alert follow-ups as navigable items */}
-            {alerts.slice(0, 2).map((alert) => (
-              <button key={alert.id} onClick={() => router.push("/alerts")}
-                className="w-full px-3 py-2.5 border-b border-gray-50 last:border-0 flex items-center justify-between hover:bg-gray-50/50 text-left">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-800 truncate">{alert.title}</p>
-                  <p className="text-[10px] text-gray-400 truncate mt-0.5">{alert.recommended_action || alert.summary}</p>
-                </div>
-                <span className="text-[9px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded font-medium flex-shrink-0 ml-2">Alert</span>
-              </button>
-            ))}
-          </div>
+            </div>
+          </section>
         )}
 
         {/* ── Low Stock ── */}
         {lowStock.length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-              <div className="flex items-center gap-1.5">
-                <Package size={13} className="text-amber-500" />
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Low Stock</span>
+          <section>
+            <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+              Inventory
+            </p>
+            <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+            <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Package size={14} className="text-amber-500" />
+                <h2 className="text-sm font-semibold text-stone-800">Running low</h2>
               </div>
-              <button onClick={() => router.push("/inventory")} className="text-[10px] text-green-600 font-medium">View all</button>
+              <button
+                onClick={() => router.push("/inventory")}
+                className="text-xs font-medium text-emerald-700 hover:underline"
+              >
+                View all
+              </button>
             </div>
-            {lowStock.map((item, i) => (
-              <div key={i} className="flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-0 text-xs">
-                <span className="text-gray-700">{item.item_name}</span>
-                <span className="text-red-500 font-medium">{item.current_quantity} {item.unit}</span>
-              </div>
-            ))}
-          </div>
+            <ul className="divide-y divide-stone-100">
+              {lowStock.map((item, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between px-4 py-2.5 text-sm"
+                >
+                  <span className="text-stone-700">{item.item_name}</span>
+                  <span className="font-medium text-red-600">
+                    {item.current_quantity} {item.unit}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            </div>
+          </section>
         )}
 
-      </div>
+      </main>
 
       {/* Tour overlay */}
       {showTour && (

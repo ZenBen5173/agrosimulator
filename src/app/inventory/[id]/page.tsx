@@ -1,8 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
-import PageHeader from "@/components/ui/PageHeader";
+/**
+ * AgroSim 2.0 — Inventory item detail.
+ * Clean rewrite: item header, current stock, low-stock badge, movement history.
+ * Drops the 1.0 document_items purchase chain since those tables were cut.
+ */
+
+import { use, useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Package,
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Loader2,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface InventoryItem {
@@ -21,275 +34,234 @@ interface InventoryItem {
 
 interface Movement {
   id: string;
-  movement_type: string;
+  movement_type: "purchase" | "usage" | "adjustment" | "wastage";
   quantity: number;
   unit: string;
   notes: string | null;
   created_at: string;
 }
 
-interface PurchaseRecord {
-  bill_date: string;
-  quantity: number;
-  unit: string;
-  unit_price_rm: number;
-  total_rm: number;
-  supplier: string | null;
-  doc_number: string;
-}
+const TYPE_LABEL: Record<string, string> = {
+  fertilizer: "Fertiliser",
+  pesticide: "Pesticide",
+  seed: "Seed",
+  tool: "Tool",
+  other: "Other",
+};
 
-export default function InventoryDetailPage() {
-  const params = useParams();
-  const itemId = params.id as string;
+const MOVEMENT_LABEL: Record<string, string> = {
+  purchase: "Bought",
+  usage: "Used",
+  adjustment: "Adjusted",
+  wastage: "Wasted",
+};
+
+export default function InventoryDetailPage(props: {
+  params: Promise<{ id: string }>;
+}) {
+  const router = useRouter();
+  const { id } = use(props.params);
 
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
-  const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const load = useCallback(async () => {
+    const supabase = createClient();
+
+    const { data: itemData } = await supabase
+      .from("inventory_items")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (itemData) setItem(itemData);
+
+    const { data: movs } = await supabase
+      .from("inventory_movements")
+      .select("id, movement_type, quantity, unit, notes, created_at")
+      .eq("item_id", id)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    setMovements(movs ?? []);
+    setLoading(false);
+  }, [id]);
+
   useEffect(() => {
-    async function fetch() {
-      const supabase = createClient();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
-      // Item details
-      const { data: itemData } = await supabase
-        .from("inventory_items")
-        .select("*")
-        .eq("id", itemId)
-        .single();
+  const isLow =
+    item?.reorder_threshold &&
+    item.current_quantity <= item.reorder_threshold;
 
-      if (!itemData) { setLoading(false); return; }
-      setItem(itemData);
-
-      // Movement history (ins and outs)
-      const { data: movs } = await supabase
-        .from("inventory_movements")
-        .select("id, movement_type, quantity, unit, notes, created_at")
-        .eq("item_id", itemId)
-        .order("created_at", { ascending: false })
-        .limit(30);
-
-      setMovements(movs || []);
-
-      // Purchase history from document_items (find matching purchases)
-      const { data: docItems } = await supabase
-        .from("document_items")
-        .select("quantity, unit, unit_price_rm, total_rm, document_id, document_type, created_at")
-        .ilike("item_name", `%${itemData.item_name.split(" (")[0].split(" ").slice(0, 2).join(" ")}%`)
-        .in("document_type", ["grn", "purchase_order", "purchase_invoice"])
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      const purchaseRecords: PurchaseRecord[] = [];
-      for (const di of docItems || []) {
-        // Get parent document for date and supplier
-        let docDate = di.created_at?.split("T")[0] || "";
-        let supplier: string | null = null;
-        let docNumber = "";
-
-        if (di.document_type === "purchase_invoice") {
-          const { data: bill } = await supabase.from("purchase_invoices").select("bill_date, bill_number, suppliers(name)").eq("id", di.document_id).single();
-          if (bill) {
-            docDate = bill.bill_date;
-            docNumber = bill.bill_number;
-            supplier = ((bill as Record<string, unknown>).suppliers as { name: string } | null)?.name || null;
-          }
-        } else if (di.document_type === "purchase_order") {
-          const { data: po } = await supabase.from("purchase_orders").select("po_date, po_number, suppliers(name)").eq("id", di.document_id).single();
-          if (po) {
-            docDate = po.po_date;
-            docNumber = po.po_number;
-            supplier = ((po as Record<string, unknown>).suppliers as { name: string } | null)?.name || null;
-          }
-        } else if (di.document_type === "grn") {
-          const { data: grn } = await supabase.from("goods_received_notes").select("grn_date, grn_number, suppliers(name)").eq("id", di.document_id).single();
-          if (grn) {
-            docDate = grn.grn_date;
-            docNumber = grn.grn_number;
-            supplier = ((grn as Record<string, unknown>).suppliers as { name: string } | null)?.name || null;
-          }
-        }
-
-        purchaseRecords.push({
-          bill_date: docDate,
-          quantity: di.quantity,
-          unit: di.unit,
-          unit_price_rm: di.unit_price_rm,
-          total_rm: di.total_rm,
-          supplier,
-          doc_number: docNumber,
-        });
-      }
-
-      setPurchases(purchaseRecords);
-      setLoading(false);
-    }
-    fetch();
-  }, [itemId]);
-
-  const formatDate = (d: string) => {
-    const date = new Date(d);
-    return date.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "2-digit" });
-  };
-
-  const formatTime = (d: string) => {
-    const date = new Date(d);
-    return date.toLocaleDateString("en-MY", { day: "numeric", month: "short" }) + " " + date.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: true });
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <PageHeader title="Item Detail" breadcrumbs={[{ label: "Accounts", href: "/dashboard" }, { label: "Inventory", href: "/inventory" }, { label: "..." }]} />
-        <div className="px-4 pt-4 space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />)}</div>
-      </div>
-    );
-  }
-
-  if (!item) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <PageHeader title="Item Not Found" breadcrumbs={[{ label: "Accounts", href: "/dashboard" }, { label: "Inventory", href: "/inventory" }]} />
-        <div className="px-4 pt-12 text-center text-sm text-gray-400">Item not found</div>
-      </div>
-    );
-  }
-
-  const isLow = item.reorder_threshold && item.current_quantity <= item.reorder_threshold;
-  const totalIn = Math.round(movements.filter((m) => m.movement_type === "purchase" || m.movement_type === "adjustment").reduce((s, m) => s + m.quantity, 0) * 100) / 100;
-  const totalOut = Math.round(movements.filter((m) => m.movement_type === "usage" || m.movement_type === "wastage").reduce((s, m) => s + m.quantity, 0) * 100) / 100;
-
-  // Running balance for movements
-  let balance = item.current_quantity;
-  const movementsWithBalance = movements.map((m) => {
-    const row = { ...m, balance: Math.round(balance * 100) / 100 };
-    if (m.movement_type === "purchase" || m.movement_type === "adjustment") {
-      balance -= m.quantity;
-    } else {
-      balance += m.quantity;
-    }
-    return row;
-  });
-
-  // Price history from purchases
-  const avgPrice = purchases.length > 0
-    ? purchases.reduce((s, p) => s + p.unit_price_rm, 0) / purchases.length
-    : item.last_purchase_price_rm || 0;
+  const totalIn = movements
+    .filter((m) => m.movement_type === "purchase" || m.movement_type === "adjustment")
+    .reduce((s, m) => s + m.quantity, 0);
+  const totalOut = movements
+    .filter((m) => m.movement_type === "usage" || m.movement_type === "wastage")
+    .reduce((s, m) => s + m.quantity, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <PageHeader
-        title={item.item_name}
-        breadcrumbs={[{ label: "Accounts", href: "/dashboard" }, { label: "Inventory", href: "/inventory" }, { label: item.item_name.split(" (")[0] }]}
-      />
-
-      <div className="px-4 pt-3 space-y-3">
-
-        {/* Current stock header */}
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <div className="grid grid-cols-3 divide-x divide-gray-100">
-            <div className="px-3 py-3 text-center">
-              <p className="text-[10px] text-gray-400">Current Stock</p>
-              <p className={`text-lg font-bold mt-0.5 ${isLow ? "text-red-500" : "text-gray-900"}`}>{item.current_quantity}</p>
-              <p className="text-[10px] text-gray-400">{item.unit}</p>
-            </div>
-            <div className="px-3 py-3 text-center">
-              <p className="text-[10px] text-gray-400">Total In</p>
-              <p className="text-sm font-bold text-green-600 mt-0.5">+{totalIn} {item.unit}</p>
-            </div>
-            <div className="px-3 py-3 text-center">
-              <p className="text-[10px] text-gray-400">Total Out</p>
-              <p className="text-sm font-bold text-red-500 mt-0.5">-{totalOut} {item.unit}</p>
-            </div>
+    <div className="min-h-screen bg-stone-50 pb-24">
+      <header className="border-b border-stone-200 bg-white px-4 py-3">
+        <div className="mx-auto flex max-w-xl items-center gap-2">
+          <button onClick={() => router.back()} aria-label="Back">
+            <ArrowLeft size={18} className="text-stone-500" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-semibold text-stone-900">
+              {item?.item_name ?? "Item"}
+            </h1>
+            <p className="text-[11px] leading-none text-stone-500">
+              Books · Inventory item
+            </p>
           </div>
         </div>
+      </header>
 
-        {/* Item details */}
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-100">
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Details</span>
+      <main className="mx-auto max-w-xl space-y-4 p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={20} className="animate-spin text-emerald-600" />
           </div>
-          <div className="divide-y divide-gray-50">
-            <div className="flex justify-between px-3 py-2 text-xs"><span className="text-gray-400">Type</span><span className="text-gray-700 capitalize">{item.item_type}</span></div>
-            <div className="flex justify-between px-3 py-2 text-xs"><span className="text-gray-400">Last Price</span><span className="text-gray-700">{item.last_purchase_price_rm ? `RM${item.last_purchase_price_rm.toFixed(2)}/${item.unit}` : "—"}</span></div>
-            <div className="flex justify-between px-3 py-2 text-xs"><span className="text-gray-400">Avg Price</span><span className="text-gray-700">RM{avgPrice.toFixed(2)}/{item.unit}</span></div>
-            {item.reorder_threshold && <div className="flex justify-between px-3 py-2 text-xs"><span className="text-gray-400">Reorder Level</span><span className={isLow ? "text-red-500 font-medium" : "text-gray-700"}>{item.reorder_threshold} {item.unit}</span></div>}
-            {item.supplier_name && <div className="flex justify-between px-3 py-2 text-xs"><span className="text-gray-400">Supplier</span><span className="text-gray-700">{item.supplier_name}</span></div>}
-          </div>
-        </div>
+        ) : !item ? (
+          <p className="py-12 text-center text-sm text-stone-400">
+            Item not found.
+          </p>
+        ) : (
+          <>
+            {/* Current stock */}
+            <section className="rounded-xl border border-stone-200 bg-white p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-stone-400">
+                    Current stock
+                  </p>
+                  <p
+                    className={`mt-1 text-3xl font-semibold ${
+                      isLow ? "text-red-600" : "text-stone-900"
+                    }`}
+                  >
+                    {item.current_quantity} {item.unit}
+                  </p>
+                  <p className="mt-0.5 text-xs text-stone-500">
+                    {TYPE_LABEL[item.item_type] ?? item.item_type}
+                    {item.supplier_name && ` · ${item.supplier_name}`}
+                  </p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-stone-50">
+                  <Package size={20} className="text-stone-500" />
+                </div>
+              </div>
 
-        {/* Purchase history */}
-        {purchases.length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="px-3 py-2 border-b border-gray-100">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Purchase History</span>
-            </div>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-[10px] text-gray-400 border-b border-gray-50">
-                  <th className="text-left font-medium px-3 py-1.5">Date</th>
-                  <th className="text-left font-medium px-2 py-1.5">Doc</th>
-                  <th className="text-right font-medium px-2 py-1.5">Qty</th>
-                  <th className="text-right font-medium px-2 py-1.5">Price</th>
-                  <th className="text-right font-medium px-3 py-1.5">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {purchases.map((p, i) => (
-                  <tr key={i} className="border-b border-gray-50 last:border-0">
-                    <td className="px-3 py-2 text-gray-500">{formatDate(p.bill_date)}</td>
-                    <td className="px-2 py-2 text-gray-700 font-medium">{p.doc_number || "—"}</td>
-                    <td className="px-2 py-2 text-right text-gray-700">{p.quantity} {p.unit}</td>
-                    <td className="px-2 py-2 text-right text-gray-500">RM{p.unit_price_rm.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right font-medium text-gray-800">RM{p.total_rm.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+              {isLow && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <AlertTriangle size={14} />
+                  Below reorder threshold of {item.reorder_threshold} {item.unit}
+                  {item.reorder_quantity && ` — order ${item.reorder_quantity} ${item.unit}`}
+                </div>
+              )}
+            </section>
 
-        {/* Stock movements (ins and outs with running balance) */}
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Stock Movements</span>
-            <span className="text-[10px] text-gray-400">{movements.length} records</span>
-          </div>
-          {movements.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs text-gray-400">No stock movements recorded</div>
-          ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-[10px] text-gray-400 border-b border-gray-50">
-                  <th className="text-left font-medium px-3 py-1.5">Date</th>
-                  <th className="text-left font-medium px-2 py-1.5">Type</th>
-                  <th className="text-right font-medium px-2 py-1.5">Qty</th>
-                  <th className="text-right font-medium px-3 py-1.5">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movementsWithBalance.map((m) => {
-                  const isIn = m.movement_type === "purchase" || m.movement_type === "adjustment";
-                  return (
-                    <tr key={m.id} className="border-b border-gray-50 last:border-0">
-                      <td className="px-3 py-2 text-gray-500">{formatTime(m.created_at)}</td>
-                      <td className="px-2 py-2">
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${isIn ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500"}`}>
-                          {m.movement_type}
+            {/* Mini stats */}
+            <section className="grid grid-cols-3 gap-2">
+              <Stat label="In" value={`${totalIn.toFixed(1)} ${item.unit}`} tone="in" />
+              <Stat label="Out" value={`${totalOut.toFixed(1)} ${item.unit}`} tone="out" />
+              <Stat
+                label="Last price"
+                value={
+                  item.last_purchase_price_rm
+                    ? `RM ${item.last_purchase_price_rm.toFixed(2)}`
+                    : "—"
+                }
+              />
+            </section>
+
+            {/* Movement history */}
+            <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+              <div className="border-b border-stone-100 px-4 py-3">
+                <h2 className="text-sm font-semibold text-stone-800">
+                  Recent movements
+                </h2>
+              </div>
+              {movements.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-stone-400">
+                  No movements yet. Receipts and treatments will appear here.
+                </p>
+              ) : (
+                <ul className="divide-y divide-stone-100">
+                  {movements.map((m) => {
+                    const isIn =
+                      m.movement_type === "purchase" || m.movement_type === "adjustment";
+                    return (
+                      <li
+                        key={m.id}
+                        className="flex items-center gap-3 px-4 py-3 text-sm"
+                      >
+                        <span
+                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${
+                            isIn ? "bg-emerald-50" : "bg-stone-100"
+                          }`}
+                        >
+                          {isIn ? (
+                            <ArrowDownToLine
+                              size={14}
+                              className="text-emerald-700"
+                            />
+                          ) : (
+                            <ArrowUpFromLine
+                              size={14}
+                              className="text-stone-500"
+                            />
+                          )}
                         </span>
-                      </td>
-                      <td className={`px-2 py-2 text-right font-medium ${isIn ? "text-green-600" : "text-red-500"}`}>
-                        {isIn ? "+" : "-"}{m.quantity} {m.unit}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">{m.balance.toFixed(1)} {item.unit}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-stone-800">
+                            {MOVEMENT_LABEL[m.movement_type] ?? m.movement_type}
+                          </p>
+                          <p className="text-[11px] text-stone-500 truncate">
+                            {m.notes ?? new Date(m.created_at).toLocaleDateString("en-MY")}
+                          </p>
+                        </div>
+                        <span
+                          className={`flex-shrink-0 text-sm font-medium ${
+                            isIn ? "text-emerald-700" : "text-stone-700"
+                          }`}
+                        >
+                          {isIn ? "+" : "−"}
+                          {m.quantity} {m.unit}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "in" | "out";
+}) {
+  const colourCls =
+    tone === "in" ? "text-emerald-700" : tone === "out" ? "text-stone-700" : "text-stone-900";
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-3">
+      <p className="text-[10px] uppercase tracking-wide text-stone-400">
+        {label}
+      </p>
+      <p className={`mt-0.5 text-sm font-semibold ${colourCls}`}>{value}</p>
     </div>
   );
 }

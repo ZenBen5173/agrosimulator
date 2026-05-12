@@ -73,14 +73,6 @@ export default function NotificationBell() {
                 )}
               </div>
 
-              {/* Link to alerts page */}
-              <button
-                onClick={() => { setOpen(false); router.push("/alerts"); }}
-                className="w-full px-4 py-2 text-xs text-purple-600 font-medium bg-purple-50 hover:bg-purple-100 text-center"
-              >
-                View Farm Alerts &rarr;
-              </button>
-
               <div className="max-h-64 overflow-y-auto">
                 {notifications.length === 0 ? (
                   <div className="px-4 py-6 text-center text-sm text-gray-400">

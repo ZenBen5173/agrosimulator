@@ -1,807 +1,557 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+/**
+ * AgroSim 2.0 — Pact layer surface.
+ *
+ * Three sections:
+ *   1. Anonymous district price benchmark — the killer line
+ *   2. Open group buys in your district + "Start one" button
+ *   3. Log a sale (feeds the benchmark for everyone)
+ *
+ * Replaces the 1.0 market page (stock-market-style charts) which was
+ * cut from the 2.0 spec.
+ */
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  ChevronDown,
-  RefreshCw,
   ArrowLeft,
+  TrendingUp,
+  Users,
+  ChevronRight,
+  Loader2,
+  Check,
 } from "lucide-react";
-import AISummary from "@/components/ui/AISummary";
-import PageHeader from "@/components/ui/PageHeader";
+import type { CropName } from "@/lib/diagnosis/types";
+import type {
+  GroupBuyStatus,
+  PriceBenchmarkResponse,
+} from "@/lib/pact/types";
+import { createClient } from "@/lib/supabase/client";
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
+const CROPS: { value: CropName; label: string }[] = [
+  { value: "chilli", label: "Chilli (cili)" },
+  { value: "paddy", label: "Paddy (padi)" },
+  { value: "kangkung", label: "Kangkung" },
+  { value: "banana", label: "Banana (pisang)" },
+  { value: "corn", label: "Corn (jagung)" },
+  { value: "sweet_potato", label: "Sweet potato (keledek)" },
+];
 
-interface PricePoint {
-  date: string;
-  price: number;
-  high: number;
-  low: number;
-}
+const DISTRICTS = [
+  "Cameron Highlands",
+  "Kedah",
+  "Perak",
+  "Selangor",
+  "Johor",
+  "Kelantan",
+  "Pahang",
+  "Sabah",
+  "Sarawak",
+];
 
-interface ItemHistory {
-  item_name: string;
-  item_type: string;
-  unit: string;
-  current_price: number;
-  trend: string;
-  trend_pct: number;
-  data: PricePoint[];
-}
-
-type Tab = "crop" | "supply";
-type TimeRange = 7 | 30 | 90;
-
-/* ------------------------------------------------------------------ */
-/*  Crop emoji helper                                                  */
-/* ------------------------------------------------------------------ */
-
-const ITEM_EMOJI: Record<string, string> = {
-  "Paddy/Rice": "🌾",
-  "Oil Palm (FFB)": "🌴",
-  Rubber: "🌳",
-  Chilli: "🌶️",
-  Tomato: "🍅",
-  Cucumber: "🥒",
-  Kangkung: "🥬",
-  Durian: "🥭",
-  Banana: "🍌",
-  "NPK Fertilizer": "🧪",
-  Urea: "🧪",
-  Glyphosate: "🧴",
-  Cypermethrin: "🧴",
-};
-
-/* ------------------------------------------------------------------ */
-/*  Sparkline (pure SVG — lightweight, no recharts dependency)         */
-/* ------------------------------------------------------------------ */
-
-function Sparkline({
-  data,
-  trend,
-  width = 80,
-  height = 32,
-}: {
-  data: PricePoint[];
-  trend: string;
-  width?: number;
-  height?: number;
-}) {
-  if (!data || data.length < 2) return null;
-
-  const prices = data.map((d) => d.price);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const range = max - min || 1;
-
-  const points = prices
-    .map((p, i) => {
-      const x = (i / (prices.length - 1)) * width;
-      const y = height - ((p - min) / range) * (height - 4) - 2;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  const color =
-    trend === "up" ? "#22c55e" : trend === "down" ? "#ef4444" : "#9ca3af";
-
-  // Create fill path (area under curve)
-  const fillPoints = `0,${height} ${points} ${width},${height}`;
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      aria-hidden="true"
-      className="flex-shrink-0"
-    >
-      <defs>
-        <linearGradient
-          id={`spark-fill-${trend}`}
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="1"
-        >
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon
-        points={fillPoints}
-        fill={`url(#spark-fill-${trend})`}
-      />
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Area Chart (pure SVG — stock-market style)                         */
-/* ------------------------------------------------------------------ */
-
-function AreaChart({
-  data,
-  trend,
-  unit,
-}: {
-  data: PricePoint[];
-  trend: string;
-  unit: string;
-}) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-
-  if (!data || data.length < 2)
-    return (
-      <div className="flex h-48 items-center justify-center text-sm text-gray-400">
-        No data available
-      </div>
-    );
-
-  const W = 600;
-  const H = 200;
-  const PAD_T = 20;
-  const PAD_B = 28;
-  const PAD_L = 48;
-  const PAD_R = 12;
-
-  const prices = data.map((d) => d.price);
-  const min = Math.min(...prices, ...data.map((d) => d.low));
-  const max = Math.max(...prices, ...data.map((d) => d.high));
-  const range = max - min || 1;
-
-  const chartW = W - PAD_L - PAD_R;
-  const chartH = H - PAD_T - PAD_B;
-
-  function x(i: number) {
-    return PAD_L + (i / (data.length - 1)) * chartW;
-  }
-  function y(v: number) {
-    return PAD_T + chartH - ((v - min) / range) * chartH;
-  }
-
-  const linePath = data
-    .map((d, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(d.price)}`)
-    .join(" ");
-
-  const areaPath = `${linePath} L${x(data.length - 1)},${H - PAD_B} L${PAD_L},${H - PAD_B} Z`;
-
-  // High-low range band
-  const bandUpper = data
-    .map((d, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(d.high)}`)
-    .join(" ");
-  const bandLower = data
-    .map((d, i) => `L${x(data.length - 1 - i)},${y(data[data.length - 1 - i].low)}`)
-    .join(" ");
-  const bandPath = `${bandUpper} ${bandLower} Z`;
-
-  const mainColor =
-    trend === "up" ? "#22c55e" : trend === "down" ? "#ef4444" : "#6b7280";
-  const gradId = `area-grad-${trend}`;
-
-  // Y-axis labels (5 ticks)
-  const yTicks = Array.from({ length: 5 }, (_, i) => {
-    const v = min + (range * i) / 4;
-    return { v, y: y(v) };
-  });
-
-  // X-axis labels (show ~6 dates)
-  const step = Math.max(1, Math.floor(data.length / 6));
-  const xLabels = data.filter((_, i) => i % step === 0 || i === data.length - 1);
-
-  const hovered = hoveredIndex !== null ? data[hoveredIndex] : null;
-
-  return (
-    <div className="relative">
-      {/* Tooltip */}
-      <AnimatePresence>
-        {hovered && hoveredIndex !== null && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="absolute top-0 z-10 rounded-lg bg-gray-900 px-3 py-1.5 text-xs text-white shadow-lg pointer-events-none"
-            style={{
-              left: `${Math.min(85, Math.max(5, ((hoveredIndex) / (data.length - 1)) * 100))}%`,
-              transform: "translateX(-50%)",
-            }}
-          >
-            <div className="font-semibold">
-              RM{hovered.price.toFixed(2)}/{unit}
-            </div>
-            <div className="text-gray-300">
-              H: RM{hovered.high.toFixed(2)} · L: RM{hovered.low.toFixed(2)}
-            </div>
-            <div className="text-gray-400">{hovered.date}</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-auto"
-        preserveAspectRatio="xMidYMid meet"
-        onMouseLeave={() => setHoveredIndex(null)}
-        role="img"
-        aria-label="Price history chart"
-      >
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={mainColor} stopOpacity="0.25" />
-            <stop offset="100%" stopColor={mainColor} stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-
-        {/* Grid lines */}
-        {yTicks.map((t, i) => (
-          <g key={i}>
-            <line
-              x1={PAD_L}
-              y1={t.y}
-              x2={W - PAD_R}
-              y2={t.y}
-              stroke="#e5e7eb"
-              strokeWidth="0.5"
-              strokeDasharray="4,4"
-            />
-            <text
-              x={PAD_L - 6}
-              y={t.y + 3}
-              textAnchor="end"
-              className="fill-gray-400"
-              fontSize="10"
-            >
-              {t.v.toFixed(2)}
-            </text>
-          </g>
-        ))}
-
-        {/* X-axis labels */}
-        {xLabels.map((d, i) => {
-          const idx = data.indexOf(d);
-          return (
-            <text
-              key={i}
-              x={x(idx)}
-              y={H - 6}
-              textAnchor="middle"
-              className="fill-gray-400"
-              fontSize="9"
-            >
-              {new Date(d.date).toLocaleDateString("en-MY", {
-                day: "numeric",
-                month: "short",
-              })}
-            </text>
-          );
-        })}
-
-        {/* High-low band */}
-        <path d={bandPath} fill={mainColor} opacity="0.06" />
-
-        {/* Area fill */}
-        <path d={areaPath} fill={`url(#${gradId})`} />
-
-        {/* Price line */}
-        <path
-          d={linePath}
-          fill="none"
-          stroke={mainColor}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* Hover targets — invisible wider rects for touch/mouse */}
-        {data.map((_, i) => (
-          <rect
-            key={i}
-            x={x(i) - chartW / data.length / 2}
-            y={PAD_T}
-            width={chartW / data.length}
-            height={chartH}
-            fill="transparent"
-            onMouseEnter={() => setHoveredIndex(i)}
-            onTouchStart={() => setHoveredIndex(i)}
-          />
-        ))}
-
-        {/* Hover crosshair */}
-        {hoveredIndex !== null && (
-          <>
-            <line
-              x1={x(hoveredIndex)}
-              y1={PAD_T}
-              x2={x(hoveredIndex)}
-              y2={H - PAD_B}
-              stroke={mainColor}
-              strokeWidth="1"
-              strokeDasharray="3,3"
-              opacity="0.5"
-            />
-            <circle
-              cx={x(hoveredIndex)}
-              cy={y(data[hoveredIndex].price)}
-              r="4"
-              fill="white"
-              stroke={mainColor}
-              strokeWidth="2"
-            />
-          </>
-        )}
-      </svg>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Stats summary bar                                                  */
-/* ------------------------------------------------------------------ */
-
-function StatsSummary({
-  data,
-  unit,
-}: {
-  data: PricePoint[];
-  unit: string;
-}) {
-  if (!data || data.length === 0) return null;
-
-  const prices = data.map((d) => d.price);
-  const high = Math.max(...data.map((d) => d.high));
-  const low = Math.min(...data.map((d) => d.low));
-  const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
-  const first = prices[0];
-  const last = prices[prices.length - 1];
-  const changePct = ((last - first) / first) * 100;
-
-  return (
-    <div className="grid grid-cols-4 gap-2">
-      <div className="rounded-xl bg-green-50 p-2.5 text-center">
-        <p className="text-[9px] font-medium text-gray-500 uppercase tracking-wide">
-          High
-        </p>
-        <p className="text-sm font-bold text-green-700">
-          {high.toFixed(2)}
-        </p>
-      </div>
-      <div className="rounded-xl bg-red-50 p-2.5 text-center">
-        <p className="text-[9px] font-medium text-gray-500 uppercase tracking-wide">
-          Low
-        </p>
-        <p className="text-sm font-bold text-red-600">
-          {low.toFixed(2)}
-        </p>
-      </div>
-      <div className="rounded-xl bg-blue-50 p-2.5 text-center">
-        <p className="text-[9px] font-medium text-gray-500 uppercase tracking-wide">
-          Average
-        </p>
-        <p className="text-sm font-bold text-blue-700">
-          {avg.toFixed(2)}
-        </p>
-      </div>
-      <div className="rounded-xl bg-gray-50 p-2.5 text-center">
-        <p className="text-[9px] font-medium text-gray-500 uppercase tracking-wide">
-          Change
-        </p>
-        <p
-          className={`text-sm font-bold ${
-            changePct > 0
-              ? "text-green-600"
-              : changePct < 0
-                ? "text-red-600"
-                : "text-gray-600"
-          }`}
-        >
-          {changePct > 0 ? "+" : ""}
-          {changePct.toFixed(1)}%
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Item row card (list view)                                          */
-/* ------------------------------------------------------------------ */
-
-function PriceRow({
-  item,
-  isSelected,
-  onClick,
-}: {
-  item: ItemHistory;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  const emoji = ITEM_EMOJI[item.item_name] || "📦";
-  const trendColor =
-    item.trend === "up"
-      ? "text-green-600"
-      : item.trend === "down"
-        ? "text-red-500"
-        : "text-gray-400";
-
-  const borderColor =
-    item.trend === "up"
-      ? "border-l-green-400"
-      : item.trend === "down"
-        ? "border-l-red-400"
-        : "border-l-gray-200";
-
-  return (
-    <motion.button
-      onClick={onClick}
-      whileTap={{ scale: 0.98 }}
-      className={`w-full flex items-center gap-3 rounded-xl border-l-[3px] px-3 py-3 text-left transition-all ${borderColor} ${
-        isSelected
-          ? "bg-green-50 border border-green-200 shadow-sm"
-          : "bg-white border border-transparent hover:bg-gray-50"
-      }`}
-    >
-      {/* Emoji */}
-      <span className="text-xl flex-shrink-0">{emoji}</span>
-
-      {/* Name + trend */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900 truncate">
-          {item.item_name}
-        </p>
-        <div className="flex items-center gap-1 mt-0.5">
-          {item.trend === "up" ? (
-            <TrendingUp size={12} className="text-green-500" aria-hidden="true" />
-          ) : item.trend === "down" ? (
-            <TrendingDown size={12} className="text-red-500" aria-hidden="true" />
-          ) : (
-            <Minus size={12} className="text-gray-400" aria-hidden="true" />
-          )}
-          <span className={`text-[11px] font-medium ${trendColor}`}>
-            {item.trend_pct > 0 ? `${item.trend_pct}%` : "Stable"}
-          </span>
-        </div>
-      </div>
-
-      {/* Sparkline */}
-      <Sparkline data={item.data} trend={item.trend} width={72} height={28} />
-
-      {/* Price */}
-      <div className="text-right flex-shrink-0">
-        <p className="text-sm font-bold text-gray-900">
-          RM{item.current_price.toFixed(2)}
-        </p>
-        <p className="text-[10px] text-gray-400">/{item.unit}</p>
-      </div>
-
-      <ChevronDown
-        size={14}
-        className={`text-gray-300 flex-shrink-0 transition-transform ${
-          isSelected ? "rotate-180" : ""
-        }`}
-        aria-hidden="true"
-      />
-    </motion.button>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Main Page                                                          */
-/* ------------------------------------------------------------------ */
-
-export default function MarketPricesPage() {
+export default function PactMarketPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("crop");
-  const [range, setRange] = useState<TimeRange>(30);
-  const [history, setHistory] = useState<Record<string, ItemHistory>>({});
-  const [loading, setLoading] = useState(true);
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [crop, setCrop] = useState<CropName>("chilli");
+  const [district, setDistrict] = useState<string>("Cameron Highlands");
+  const [farmerId, setFarmerId] = useState<string | null>(null);
+  const [benchmark, setBenchmark] = useState<PriceBenchmarkResponse | null>(null);
+  const [loadingBenchmark, setLoadingBenchmark] = useState(false);
+  const [groupBuys, setGroupBuys] = useState<GroupBuyStatus[]>([]);
+  const [loadingGroupBuys, setLoadingGroupBuys] = useState(false);
 
-  const fetchHistory = useCallback(async (days: number) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/market-prices/history?days=${days}`);
-      const json = await res.json();
-      if (json.history) {
-        setHistory(json.history);
+  // Try to read user's district from their farm row on mount
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      setFarmerId(user.id);
+      const { data: farm } = await supabase
+        .from("farms")
+        .select("district")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (farm?.district && DISTRICTS.includes(farm.district)) {
+        setDistrict(farm.district);
       }
-    } catch (err) {
-      console.error("Failed to fetch market history:", err);
-    } finally {
-      setLoading(false);
-    }
+    });
   }, []);
 
+  // Load benchmark when crop or district changes.
+  // The lint rule against synchronous setState in an effect body is overly
+  // strict for "set loading flag, then fire fetch" — that's the canonical
+  // pattern. Disabling locally to keep the file readable.
   useEffect(() => {
-    fetchHistory(range);
-  }, [range, fetchHistory]);
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoadingBenchmark(true);
+    const params = new URLSearchParams({ crop, district });
+    if (farmerId) params.set("farmer_id", farmerId);
+    fetch(`/api/pact/benchmark?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setBenchmark(d); })
+      .catch(() => { if (!cancelled) setBenchmark(null); })
+      .finally(() => { if (!cancelled) setLoadingBenchmark(false); });
+    return () => { cancelled = true; };
+  }, [crop, district, farmerId]);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await fetch("/api/market-prices/refresh", { method: "POST" });
-      await fetchHistory(range);
-    } catch (err) {
-      console.error("Failed to refresh:", err);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  // Filter items by tab
-  const items = useMemo(() => {
-    return Object.values(history).filter((h) =>
-      tab === "crop"
-        ? h.item_type === "crop"
-        : h.item_type === "fertilizer" || h.item_type === "pesticide"
-    );
-  }, [history, tab]);
-
-  const selectedHistory = selectedItem ? history[selectedItem] : null;
-
-  // Market overview stats
-  const upCount = items.filter((i) => i.trend === "up").length;
-  const downCount = items.filter((i) => i.trend === "down").length;
-
-  const TIME_RANGES: { label: string; value: TimeRange }[] = [
-    { label: "7D", value: 7 },
-    { label: "30D", value: 30 },
-    { label: "90D", value: 90 },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoadingGroupBuys(true);
+    fetch(`/api/pact/group-buy?district=${encodeURIComponent(district)}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setGroupBuys(d.groupBuys ?? []); })
+      .catch(() => { if (!cancelled) setGroupBuys([]); })
+      .finally(() => { if (!cancelled) setLoadingGroupBuys(false); });
+    return () => { cancelled = true; };
+  }, [district]);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
-      <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-gray-100">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <button
-            onClick={() => router.back()}
-            className="rounded-full p-2 hover:bg-gray-100 transition-colors"
-            aria-label="Go back"
-          >
-            <ArrowLeft size={20} className="text-gray-700" />
+    <div className="min-h-screen bg-stone-50 pb-24">
+      <header className="border-b border-stone-200 bg-white px-4 py-3">
+        <div className="mx-auto flex max-w-xl items-center gap-2">
+          <button onClick={() => router.back()} aria-label="Back">
+            <ArrowLeft size={18} className="text-stone-500" />
           </button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold text-gray-900">Market Prices</h1>
-            <p className="text-[11px] text-gray-400">
-              Updated {new Date().toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}
+          <div>
+            <h1 className="text-lg font-semibold text-stone-900">Pact</h1>
+            <p className="text-[11px] leading-none text-stone-500">
+              Real prices, group buys, share what you sold.
             </p>
           </div>
-          <motion.button
-            onClick={handleRefresh}
-            whileTap={{ scale: 0.9 }}
-            disabled={refreshing}
-            className="rounded-full p-2 hover:bg-gray-100 transition-colors disabled:opacity-50"
-            aria-label="Refresh prices"
-          >
-            <RefreshCw
-              size={18}
-              className={`text-gray-500 ${refreshing ? "animate-spin" : ""}`}
-            />
-          </motion.button>
         </div>
+      </header>
 
-        {/* Market mood bar */}
-        <div className="flex items-center gap-3 px-4 pb-2">
-          <div className="flex items-center gap-1">
-            <TrendingUp size={13} className="text-green-500" aria-hidden="true" />
-            <span className="text-xs font-medium text-green-600">
-              {upCount} up
-            </span>
+      <main className="mx-auto max-w-xl px-4 py-6 space-y-8">
+        {/* ── Filters (compact, less prominent than content cards) ── */}
+        <section>
+          <SectionLabel>Showing</SectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs">
+              <span className="mb-1 block text-stone-500">District</span>
+              <select
+                value={district}
+                onChange={(e) => setDistrict(e.target.value)}
+                className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"
+              >
+                {DISTRICTS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs">
+              <span className="mb-1 block text-stone-500">Crop</span>
+              <select
+                value={crop}
+                onChange={(e) => setCrop(e.target.value as CropName)}
+                className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm"
+              >
+                {CROPS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-          <div className="flex items-center gap-1">
-            <TrendingDown size={13} className="text-red-500" aria-hidden="true" />
-            <span className="text-xs font-medium text-red-500">
-              {downCount} down
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Minus size={13} className="text-gray-400" aria-hidden="true" />
-            <span className="text-xs font-medium text-gray-400">
-              {items.length - upCount - downCount} stable
-            </span>
-          </div>
-        </div>
+        </section>
 
-        {/* Tabs */}
-        <div className="flex px-4 gap-1">
-          {(
-            [
-              { key: "crop" as Tab, label: "Crops" },
-              { key: "supply" as Tab, label: "Fertilizers & Pesticides" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                setTab(t.key);
-                setSelectedItem(null);
+        {/* ── Anonymous district price (the killer line) ── */}
+        <section>
+          <SectionLabel>Anonymous district price</SectionLabel>
+          <BenchmarkCard loading={loadingBenchmark} benchmark={benchmark} />
+        </section>
+
+        {/* ── Log a sale (your action) ── */}
+        {farmerId && (
+          <section>
+            <SectionLabel>Your action</SectionLabel>
+            <LogSaleCard
+              crop={crop}
+              district={district}
+              onSaved={() => {
+                const params = new URLSearchParams({ crop, district });
+                if (farmerId) params.set("farmer_id", farmerId);
+                fetch(`/api/pact/benchmark?${params.toString()}`)
+                  .then((r) => r.json())
+                  .then((d) => setBenchmark(d))
+                  .catch(() => {});
               }}
-              className={`relative flex-1 py-2.5 text-sm font-medium text-center rounded-t-lg transition-colors ${
-                tab === t.key
-                  ? "text-green-700 bg-green-50"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {t.label}
-              {tab === t.key && (
-                <motion.div
-                  layoutId="market-tab"
-                  className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-green-600"
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                />
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* AI Summary */}
-      {items.length > 0 && (() => {
-        const parts: string[] = [];
-        const sorted = [...items].sort((a, b) => Math.abs(b.trend_pct) - Math.abs(a.trend_pct));
-        const bigMover = sorted[0];
-        if (bigMover && Math.abs(bigMover.trend_pct) > 3) {
-          parts.push(`${bigMover.item_name} ${bigMover.trend_pct > 0 ? "up" : "down"} ${Math.abs(bigMover.trend_pct).toFixed(0)}% this week${bigMover.trend_pct > 10 ? " \u2014 significant move" : ""}`);
-        }
-        if (upCount > downCount) parts.push("market trending positive overall");
-        else if (downCount > upCount) parts.push("prices under pressure");
-        else parts.push("market mostly stable");
-        const cropUp = items.filter((i) => i.item_type === "crop" && i.trend_pct > 5);
-        if (cropUp.length > 0) parts.push(`good time to sell ${cropUp.map((c) => c.item_name).join(", ")}`);
-        return (
-          <div className="px-4 py-2">
-            <AISummary label="Market Insight">{`${parts.join(". ")}.`}</AISummary>
-          </div>
-        );
-      })()}
-
-      {/* Time range selector */}
-      <div className="flex items-center justify-between px-4 py-3">
-        <p className="text-xs text-gray-500 font-medium">
-          Price history ({range} days)
-        </p>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-          {TIME_RANGES.map((tr) => (
-            <button
-              key={tr.value}
-              onClick={() => setRange(tr.value)}
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
-                range === tr.value
-                  ? "bg-white text-green-700 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {tr.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Loading skeleton */}
-      {loading && (
-        <div className="px-4 space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-16 rounded-xl bg-gray-100 animate-pulse"
-              aria-hidden="true"
             />
-          ))}
+          </section>
+        )}
+
+        {/* ── Group buys (split: joined first, then joinable) ── */}
+        <GroupBuysSection
+          loading={loadingGroupBuys}
+          groupBuys={groupBuys}
+          district={district}
+          onStartNew={() => router.push("/pact/group-buys/new")}
+        />
+      </main>
+    </div>
+  );
+}
+
+// ─── Section helpers ────────────────────────────────────────────
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+      {children}
+    </p>
+  );
+}
+
+function GroupBuysSection({
+  loading,
+  groupBuys,
+  district,
+  onStartNew,
+}: {
+  loading: boolean;
+  groupBuys: GroupBuyStatus[];
+  district: string;
+  onStartNew: () => void;
+}) {
+  const joined = groupBuys.filter((g) => g.farmerCommitted);
+  const joinable = groupBuys.filter((g) => !g.farmerCommitted);
+
+  return (
+    <div className="space-y-8">
+      {loading && (
+        <div className="rounded-xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-500">
+          <Loader2 size={18} className="mr-2 inline-block animate-spin" />
+          Loading…
         </div>
       )}
 
-      {/* Item list */}
+      {!loading && joined.length > 0 && (
+        <section>
+          <SectionLabel>You&apos;ve joined</SectionLabel>
+          <div className="space-y-2">
+            {joined.map((g) => (
+              <GroupBuyRow key={g.groupBuyId} g={g} variant="joined" />
+            ))}
+          </div>
+        </section>
+      )}
+
       {!loading && (
-        <div className="px-4 space-y-1.5">
-          {items.map((item) => (
-            <div key={item.item_name}>
-              <PriceRow
-                item={item}
-                isSelected={selectedItem === item.item_name}
-                onClick={() =>
-                  setSelectedItem(
-                    selectedItem === item.item_name ? null : item.item_name
-                  )
-                }
-              />
-
-              {/* Expanded detail chart */}
-              <AnimatePresence>
-                {selectedItem === item.item_name && selectedHistory && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="rounded-xl border border-gray-100 bg-white p-3 mt-1 mb-1 shadow-sm">
-                      {/* Chart */}
-                      <AreaChart
-                        data={selectedHistory.data}
-                        trend={selectedHistory.trend}
-                        unit={selectedHistory.unit}
-                      />
-
-                      {/* Stats row */}
-                      <div className="mt-3">
-                        <StatsSummary
-                          data={selectedHistory.data}
-                          unit={selectedHistory.unit}
-                        />
-                      </div>
-
-                      {/* Current price callout */}
-                      <div className="mt-3 flex items-center justify-between rounded-xl bg-gray-50 px-4 py-2.5">
-                        <div>
-                          <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">
-                            Current Price
-                          </p>
-                          <p className="text-lg font-bold text-gray-900">
-                            RM{selectedHistory.current_price.toFixed(2)}
-                            <span className="text-sm font-normal text-gray-400">
-                              /{selectedHistory.unit}
-                            </span>
-                          </p>
-                        </div>
-                        <div
-                          className={`flex items-center gap-1 rounded-full px-3 py-1 ${
-                            selectedHistory.trend === "up"
-                              ? "bg-green-100 text-green-700"
-                              : selectedHistory.trend === "down"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-100 text-gray-600"
-                          }`}
-                        >
-                          {selectedHistory.trend === "up" ? (
-                            <TrendingUp size={14} aria-hidden="true" />
-                          ) : selectedHistory.trend === "down" ? (
-                            <TrendingDown size={14} aria-hidden="true" />
-                          ) : (
-                            <Minus size={14} aria-hidden="true" />
-                          )}
-                          <span className="text-sm font-semibold">
-                            {selectedHistory.trend_pct > 0
-                              ? `${selectedHistory.trend_pct}%`
-                              : "Stable"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+        <section>
+          <div className="mb-2 flex items-center justify-between px-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+              Open in {district}
+            </p>
+            <button
+              onClick={onStartNew}
+              className="text-xs font-medium text-emerald-700 hover:underline"
+            >
+              + Start one
+            </button>
+          </div>
+          {joinable.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-stone-300 bg-white p-6 text-center text-xs text-stone-500">
+              {joined.length > 0
+                ? "Nothing else open right now — start one and see who joins."
+                : "No open group buys in your district yet. Start one and see who joins."}
             </div>
-          ))}
+          ) : (
+            <div className="space-y-2">
+              {joinable.map((g) => (
+                <GroupBuyRow key={g.groupBuyId} g={g} variant="open" />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
 
-          {items.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <p className="text-sm">No price data available</p>
-              <button
-                onClick={handleRefresh}
-                className="mt-2 text-sm font-medium text-green-600 hover:underline"
+// ─── Components ─────────────────────────────────────────────────
+
+function BenchmarkCard({
+  loading,
+  benchmark,
+}: {
+  loading: boolean;
+  benchmark: PriceBenchmarkResponse | null;
+}) {
+  if (loading) {
+    return (
+      <section className="rounded-xl border border-stone-200 bg-white p-4 flex items-center justify-center text-sm text-stone-500">
+        <Loader2 size={18} className="animate-spin mr-2" />
+        Loading district benchmark…
+      </section>
+    );
+  }
+  if (!benchmark) return null;
+
+  const colour =
+    benchmark.comparison === "above_median"
+      ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+      : benchmark.comparison === "below_median"
+      ? "bg-amber-50 border-amber-300 text-amber-900"
+      : "bg-stone-50 border-stone-200 text-stone-700";
+
+  return (
+    <section className={`rounded-xl border p-4 space-y-2 ${colour}`}>
+      <div className="flex items-center gap-2">
+        <TrendingUp size={18} />
+        <h2 className="text-sm font-semibold">Anonymous district price</h2>
+      </div>
+      <p className="text-sm leading-relaxed">{benchmark.message}</p>
+      <p className="text-[11px] italic opacity-75">{benchmark.trustNote}</p>
+    </section>
+  );
+}
+
+function GroupBuyRow({
+  g,
+  variant = "open",
+}: {
+  g: GroupBuyStatus;
+  variant?: "joined" | "open";
+}) {
+  const ratio = Math.min(1, g.participantsJoined / g.participantsTarget);
+  const isJoined = variant === "joined";
+
+  // Joined buys get an emerald-tinted card so they visually separate from
+  // joinable ones at a glance — matching the "you're in this" trust posture.
+  const cardClass = isJoined
+    ? "block rounded-xl border-2 border-emerald-300 bg-emerald-50/40 p-3 hover:border-emerald-500"
+    : "block rounded-xl border border-stone-200 bg-white p-3 hover:border-emerald-400";
+
+  return (
+    <Link href={`/pact/group-buys/${g.groupBuyId}`} className={cardClass}>
+      <div className="flex items-start justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-stone-900">{g.itemName}</p>
+          <p className="mt-0.5 text-xs text-stone-500">
+            Bulk RM {g.bulkPriceRm.toFixed(2)}/{g.unit}
+            <span className="text-stone-400">
+              {" "}
+              · alone RM {g.individualPriceRm.toFixed(2)}
+            </span>
+          </p>
+          <p className="mt-1 text-xs font-medium text-emerald-700">
+            Save RM {g.savingsRm.toFixed(2)}/{g.unit}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1 text-xs text-stone-700">
+            <Users size={12} />
+            <span>
+              {g.participantsJoined}/{g.participantsTarget}
+            </span>
+          </div>
+          {isJoined && (
+            <span className="inline-flex items-center gap-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-medium text-white">
+              <Check size={10} /> Joined
+            </span>
+          )}
+          <ChevronRight size={14} className="text-stone-300" />
+        </div>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-100">
+        <div
+          className={`h-full ${isJoined ? "bg-emerald-600" : "bg-emerald-400"}`}
+          style={{ width: `${Math.round(ratio * 100)}%` }}
+        />
+      </div>
+    </Link>
+  );
+}
+
+function LogSaleCard({
+  crop: defaultCrop,
+  district: defaultDistrict,
+  onSaved,
+}: {
+  crop: CropName;
+  district: string;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // Pre-fill from page-level filters but let the user override here so the
+  // form is self-contained (you can log a sale for any crop/district without
+  // changing the page filter at the top).
+  const [crop, setCrop] = useState<CropName>(defaultCrop);
+  const [district, setDistrict] = useState<string>(defaultDistrict);
+  const [saleDate, setSaleDate] = useState<string>(
+    () => new Date().toISOString().split("T")[0]
+  );
+  const [quantityKg, setQuantityKg] = useState("");
+  const [pricePerKg, setPricePerKg] = useState("");
+  const [buyerType, setBuyerType] = useState<string>("middleman");
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Re-sync defaults when the page-level filters change AND the form is closed.
+  // Keeps the form intuitive when the user picks a different crop above and
+  // then opens the form for the first time.
+  useEffect(() => {
+    if (!open) {
+      setCrop(defaultCrop);
+      setDistrict(defaultDistrict);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultCrop, defaultDistrict]);
+
+  async function save() {
+    if (!quantityKg || !pricePerKg) {
+      setErr("Quantity and price required");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/farmer-sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          crop,
+          district,
+          saleDate,
+          quantityKg: parseFloat(quantityKg),
+          priceRmPerKg: parseFloat(pricePerKg),
+          buyerType,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed");
+      setSavedAt(Date.now());
+      setQuantityKg("");
+      setPricePerKg("");
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Unknown");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-stone-200 bg-white">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+      >
+        <span className="text-sm font-medium">Log a sale</span>
+        <span className="text-xs text-stone-500">
+          {open ? "−" : "+ Add what you sold"}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-stone-100 p-3 space-y-2">
+          <p className="text-[11px] text-stone-500">
+            Your number is anonymous — only the district median is shown to
+            others. This is what lets the benchmark work.
+          </p>
+
+          {/* Crop + district inside the form so it's self-contained */}
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs">
+              <span className="mb-1 block text-stone-500">Crop</span>
+              <select
+                value={crop}
+                onChange={(e) => setCrop(e.target.value as CropName)}
+                className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
               >
-                Refresh prices
-              </button>
-            </div>
+                {CROPS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs">
+              <span className="mb-1 block text-stone-500">District</span>
+              <select
+                value={district}
+                onChange={(e) => setDistrict(e.target.value)}
+                className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+              >
+                {DISTRICTS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="block text-xs">
+            <span className="mb-1 block text-stone-500">Sale date</span>
+            <input
+              type="date"
+              value={saleDate}
+              onChange={(e) => setSaleDate(e.target.value)}
+              max={new Date().toISOString().split("T")[0]}
+              className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs">
+              <span className="block text-stone-500 mb-1">Quantity (kg)</span>
+              <input
+                type="number"
+                value={quantityKg}
+                onChange={(e) => setQuantityKg(e.target.value)}
+                className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+                placeholder="e.g. 12"
+              />
+            </label>
+            <label className="text-xs">
+              <span className="block text-stone-500 mb-1">RM per kg</span>
+              <input
+                type="number"
+                step="0.01"
+                value={pricePerKg}
+                onChange={(e) => setPricePerKg(e.target.value)}
+                className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+                placeholder="e.g. 3.80"
+              />
+            </label>
+          </div>
+          <label className="block text-xs">
+            <span className="block text-stone-500 mb-1">Sold to</span>
+            <select
+              value={buyerType}
+              onChange={(e) => setBuyerType(e.target.value)}
+              className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+            >
+              <option value="middleman">Middleman / taukeh</option>
+              <option value="market_stall">Pasar tani / market stall</option>
+              <option value="restaurant">Restaurant / catering</option>
+              <option value="direct_consumer">Direct to consumer</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          <button
+            onClick={save}
+            disabled={saving}
+            className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save sale"}
+          </button>
+          {savedAt && (
+            <p className="text-xs text-emerald-700 text-center">
+              Saved. Benchmark will update next refresh.
+            </p>
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

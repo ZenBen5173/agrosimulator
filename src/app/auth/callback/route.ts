@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type");
   const tour = searchParams.get("tour");
+  const reset = searchParams.get("reset");
 
   const supabase = await createClient();
 
@@ -54,10 +55,18 @@ export async function GET(request: Request) {
     .eq("onboarding_done", true)
     .limit(1);
 
-  const tourParam = tour === "1" ? "?tour=1" : "";
+  const params = new URLSearchParams();
+  if (tour === "1") params.set("tour", "1");
+  if (reset === "1") params.set("reset", "1");
+  const qs = params.toString() ? `?${params.toString()}` : "";
 
   if (farms && farms.length > 0) {
-    return NextResponse.redirect(`${origin}/home${tourParam}`);
+    return NextResponse.redirect(`${origin}/home${qs}`);
+  }
+
+  // No farm yet — but if reset=1, go to /home so the reset can run + seed
+  if (reset === "1") {
+    return NextResponse.redirect(`${origin}/home${qs}`);
   }
 
   return NextResponse.redirect(`${origin}/onboarding`);

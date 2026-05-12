@@ -1,6 +1,10 @@
+> **NOTE — read this first.** This document describes the **1.0** build (qualifier round, April 2026). For **2.0** (finals round, May 2026 onwards), the source of truth is [`AGROSIM_2.0.md`](AGROSIM_2.0.md). Use that for any product, feature, or pitch decisions. This 1.0 doc is retained for historical context and any 1.0-era code still in the repo.
+
+---
+
 # What This Is
 This is the complete planning context for Claude Code working on AgroSimulator. Read this in full at the start of every session. It supersedes all previous [CLAUDE.md](http://claude.md/) content.
-Last updated: 10 April 2026
+Last updated: 10 April 2026 (superseded by AGROSIM_2.0.md May 2026)
 ---
 # Project Overview
 AgroSimulator is an AI-powered farm management PWA for Malaysian smallholder farmers. Built for Project 2030: MyAI Future Hackathon — Track 1: Padi & Plates.
