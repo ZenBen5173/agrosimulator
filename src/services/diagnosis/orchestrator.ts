@@ -16,7 +16,9 @@ import {
   applyPhysicalTestResult as applyTestResultPure,
   applyWeatherPriors,
   assembleDiagnosis,
+  getExtraPhotoRequests,
   normaliseCandidates,
+  normaliseHistoryAnswer,
   rankCandidates,
   seedCandidatesForCrop,
   selectHistoryQuestions,
@@ -29,6 +31,9 @@ import type {
   DiagnosisResult,
   DiagnosisSession,
   DifferentialCandidate,
+  ExtraPhoto,
+  ExtraPhotoKind,
+  ExtraPhotoRequest,
   HistoryQuestion,
   PhysicalTestPrompt,
   SpreadPattern,
@@ -69,11 +74,27 @@ export function applyPattern(
 
 // ─── Step 3 + 4: photo analysis with vision differential ────────
 
+export interface AnalysePhotoResult {
+  session: DiagnosisSession;
+  observations: string[];
+  photoQuality: string;
+  /**
+   * If the model detected the photo shows a different species than the
+   * farmer's chosen crop, this is non-null. The UI should short-circuit and
+   * surface a "wrong crop" result instead of asking history/test questions.
+   */
+  cropMismatch: {
+    detected: boolean;
+    actualPlant: string | null;
+    note: string | null;
+  };
+}
+
 export async function analysePhoto(
   session: DiagnosisSession,
   photoBase64: string,
   photoMimeType: string
-): Promise<{ session: DiagnosisSession; observations: string[]; photoQuality: string }> {
+): Promise<AnalysePhotoResult> {
   if (!session.pattern) {
     throw new Error(
       "Cannot analyse photo before pattern question is answered (Step 2)."
@@ -93,7 +114,12 @@ export async function analysePhoto(
     pattern: session.pattern,
   });
 
-  // Merge vision output back into session candidates
+  // The model may flag cropMismatch (it thinks the photo isn't the chosen
+  // crop) — we surface this as a SOFT warning to the UI but DON'T destroy
+  // the differential. The farmer knows their crop better than the AI; the
+  // UI offers an override ("It IS a chilli — diagnose anyway"). We just
+  // run the normal merge so a real differential is available behind the
+  // warning.
   const updated = mergeVisionOutput(session.candidates, visionOutput.candidates);
   const normalised = normaliseCandidates(updated);
   const ranked = rankCandidates(normalised);
@@ -107,6 +133,7 @@ export async function analysePhoto(
     },
     observations: visionOutput.observations,
     photoQuality: visionOutput.photoQuality,
+    cropMismatch: visionOutput.cropMismatch,
   };
 }
 
@@ -152,9 +179,13 @@ export function applyHistoryAnswer(
 ): DiagnosisSession {
   // Apply deterministic adjustments based on key answers. The LLM could be
   // called here for richer reasoning, but keeping it deterministic now.
+  // Free-text answers from the typed input are mapped to canonical values
+  // here so the same boost logic fires whether the farmer tapped the
+  // "Rainy" button or typed "It rained for 4 days last week".
+  const canonical = normaliseHistoryAnswer(questionId, answer) ?? answer;
   let candidates = session.candidates;
 
-  if (questionId === "weather" && answer === "rainy") {
+  if (questionId === "weather" && canonical === "rainy") {
     // Rainy weather boosts fungal/bacterial probabilities — already largely
     // handled by applyWeatherPriors at session start, but apply a small bump
     // here based on farmer's first-hand confirmation.
@@ -168,7 +199,7 @@ export function applyHistoryAnswer(
     });
   }
 
-  if (questionId === "soil_drainage" && answer === "waterlogged") {
+  if (questionId === "soil_drainage" && canonical === "waterlogged") {
     // Waterlogged plot strongly elevates bacterial wilt
     candidates = candidates.map((c) => {
       if (c.ruledOut) return c;
@@ -179,7 +210,7 @@ export function applyHistoryAnswer(
     });
   }
 
-  if (questionId === "recent_chemicals" && answer === "herbicide_nearby") {
+  if (questionId === "recent_chemicals" && canonical === "herbicide_nearby") {
     // Herbicide drift is a strong abiotic signal — rule out ALL biotic candidates
     candidates = candidates.map((c) => {
       if (c.ruledOut) return c;
@@ -235,4 +266,187 @@ export function finalise(session: DiagnosisSession): DiagnosisResult {
     })),
   });
   return result;
+}
+
+// ─── Layer 2: duo-layer diagnosis ───────────────────────────────
+
+/**
+ * Returns the targeted extra-photo requests Layer 2 wants the farmer to
+ * take, plus a snapshot of the Layer 1 result. The UI uses this to render
+ * the "Get a clearer answer" CTA: shows what's still uncertain, what
+ * photos would help, and the user's current best guess.
+ */
+export function getLayerTwoPlan(session: DiagnosisSession): {
+  layerOneResult: DiagnosisResult;
+  requests: ExtraPhotoRequest[];
+} {
+  const layerOneResult = finalise(session);
+  const requests = getExtraPhotoRequests(session.candidates);
+  return { layerOneResult, requests };
+}
+
+/**
+ * Run vision on a single Layer-2 photo with the candidate context that's
+ * still in play, then merge the result into the session. Each extra photo
+ * adds corroborating evidence; we accumulate them in `session.extraPhotos`
+ * and update probabilities. We do NOT lift ceilings here — that happens
+ * once at finaliseDuoLayer below, after all extra photos are in.
+ *
+ * @param session     current session (must have completed Layer 1 — i.e.
+ *                    have a photoBase64 and a pattern)
+ * @param kind        which kind of photo this is (stem cross-section, etc.).
+ *                    Optional — when undefined, the photo is treated as a
+ *                    generic close-up and the model gets no kind hint.
+ * @param photoBase64 the new photo
+ * @param mime        MIME type of the new photo
+ */
+export async function applyExtraPhoto(
+  session: DiagnosisSession,
+  kind: ExtraPhotoKind | undefined,
+  photoBase64: string,
+  mime: string
+): Promise<{ session: DiagnosisSession; observations: string[] }> {
+  if (!session.pattern) {
+    throw new Error("Cannot add extra photo before pattern question is answered");
+  }
+  if (!session.photoBase64) {
+    throw new Error("Cannot add extra photo before Layer 1 photo is uploaded");
+  }
+
+  const inPlay = session.candidates.filter((c) => !c.ruledOut);
+  const candidateIds = inPlay.map((c) => c.diseaseId);
+
+  // Re-use the existing vision flow; the kind metadata is folded into the
+  // observations so the model knows this is a stem-cut close-up vs a leaf
+  // underside, etc. (See doctorDiagnosis flow for the prompt that picks
+  // this up.)
+  const visionOutput = await visionDifferentialFlow({
+    photoBase64,
+    photoMimeType: mime,
+    crop: session.crop,
+    candidateIds,
+    pattern: session.pattern,
+    extraPhotoKind: kind,
+  });
+
+  const observations = visionOutput.observations;
+
+  // Merge the new vision output into existing candidates. Probabilities
+  // are AVERAGED with the existing ones (gives the new photo equal weight).
+  // Ruled-out by photo evidence stays ruled out.
+  const merged = session.candidates.map((c) => {
+    if (c.ruledOut) return c;
+    const v = visionOutput.candidates.find((x) => x.diseaseId === c.diseaseId);
+    if (!v) return c;
+    if (v.ruledOut) {
+      return {
+        ...c,
+        ruledOut: true,
+        ruleOutReason:
+          v.ruleOutReason ??
+          `Layer 2 photo${kind ? ` (${kind})` : ""} ruled this out`,
+      };
+    }
+    // Average with existing — corroboration boosts, contradiction tempers.
+    const blendedProb = (c.probability + v.probability) / 2;
+    return { ...c, probability: blendedProb };
+  });
+
+  // When the farmer didn't specify a kind, store as a generic close-up.
+  // The lifted-ceiling logic in finaliseDuoLayer keys off SPECIFIC kinds
+  // (stem_cross_section, new_growth_close_up, etc.); generic photos add
+  // corroborating signal but don't unlock the wilt/virus ceiling lifts.
+  const newExtraPhoto: ExtraPhoto = {
+    kind: kind ?? "whole_plant_pattern", // safest fallback — least specific
+    base64: photoBase64,
+    mime,
+    observations,
+    takenAt: new Date().toISOString(),
+  };
+
+  return {
+    session: {
+      ...session,
+      candidates: rankCandidates(normaliseCandidates(merged)),
+      extraPhotos: [...(session.extraPhotos ?? []), newExtraPhoto],
+    },
+    observations,
+  };
+}
+
+/**
+ * Final Layer 2 diagnosis. Lifts the per-group photo ceilings (virus
+ * 0.55→0.78, vascular wilt 0.70→0.88) when the corresponding extra photo
+ * has been collected, because corroborating views are MORE diagnostic
+ * information than a single leaf shot. This is honest, not arbitrary —
+ * a stem cross-section actually CAN tell Verticillium from Fusarium where
+ * a leaf alone cannot.
+ *
+ * The Layer 1 result is preserved on the session so the UI can show the
+ * confidence diff ("was 70% wilt → now 88% Verticillium").
+ */
+export function finaliseDuoLayer(session: DiagnosisSession): DiagnosisResult {
+  const extras = session.extraPhotos ?? [];
+  const lifted = liftCeilingsForCorroboration(session.candidates, extras);
+  const result = assembleDiagnosis(lifted, {
+    historyAnswers: session.historyAnswers.map((a) => ({
+      question: a.question,
+      answer: a.answer,
+    })),
+  });
+  return result;
+}
+
+/**
+ * Lift the photo-step probability caps when corroborating extra photos
+ * are present. Logic:
+ *   - stem_cross_section + (any wilt in play) → wilt cap lifts toward 0.88
+ *   - new_growth_close_up + fruit_close_up + (any virus) → virus cap lifts to 0.78
+ *   - leaf_underside + (foliar pest) → no cap to lift (pests aren't capped),
+ *     but rules out competing causes via the extra observations
+ *
+ * Implementation: scale up the in-play probabilities of the affected
+ * group BEFORE normalisation reapplies its own ceiling. We do this in a
+ * targeted way (not blanket) so adding a leaf-underside photo doesn't
+ * inflate Verticillium confidence, etc.
+ */
+function liftCeilingsForCorroboration(
+  candidates: DifferentialCandidate[],
+  extras: ExtraPhoto[]
+): DifferentialCandidate[] {
+  const kinds = new Set(extras.map((e) => e.kind));
+  const hasStemCut = kinds.has("stem_cross_section") || kinds.has("stem_in_water");
+  const hasVirusCorroboration =
+    kinds.has("new_growth_close_up") && kinds.has("fruit_close_up");
+
+  const VASCULAR_WILT = new Set([
+    "chilli_verticillium_wilt",
+    "chilli_fusarium_wilt",
+    "chilli_bacterial_wilt",
+  ]);
+  const VIRAL = new Set([
+    "chilli_chivmv",
+    "chilli_amv",
+    "chilli_cmv",
+    "chilli_tswv",
+    "chilli_pmmov",
+    "chilli_tmv",
+  ]);
+
+  // Lift target — what the multi-photo cap should be (vs the single-photo
+  // cap baked into normaliseCandidates). The wilt list and virus list both
+  // get ~0.85 headroom which is well above the "confirmed" 0.85 threshold.
+  const WILT_LIFTED = 0.88;
+  const VIRUS_LIFTED = 0.78;
+
+  return candidates.map((c) => {
+    if (c.ruledOut) return c;
+    if (hasStemCut && VASCULAR_WILT.has(c.diseaseId)) {
+      return { ...c, probability: Math.max(c.probability, WILT_LIFTED) };
+    }
+    if (hasVirusCorroboration && VIRAL.has(c.diseaseId)) {
+      return { ...c, probability: Math.max(c.probability, VIRUS_LIFTED) };
+    }
+    return c;
+  });
 }

@@ -26,10 +26,18 @@ import {
   getPhysicalTest,
   applyPhysicalTestResult,
   finalise,
+  getLayerTwoPlan,
+  applyExtraPhoto,
+  finaliseDuoLayer,
 } from "@/services/diagnosis/orchestrator";
 import { persistDiagnosis } from "@/services/diagnosis/persistence";
 import { createClient } from "@/lib/supabase/server";
-import type { CropName, DiagnosisSession, SpreadPattern } from "@/lib/diagnosis/types";
+import type {
+  CropName,
+  DiagnosisSession,
+  ExtraPhotoKind,
+  SpreadPattern,
+} from "@/lib/diagnosis/types";
 
 const VALID_CROPS: CropName[] = [
   "paddy",
@@ -54,7 +62,11 @@ interface RequestBody {
     | "photo"
     | "history"
     | "test"
-    | "finalise";
+    | "finalise"
+    // Layer 2 / duo-layer steps:
+    | "layer_two_plan"   // returns Layer 1 result + ExtraPhotoRequest[]
+    | "extra_photo"      // upload one targeted close-up
+    | "finalise_duo";    // produce Layer 2 final result
   session?: DiagnosisSession;
   // step-specific payloads
   crop?: CropName;
@@ -72,6 +84,8 @@ interface RequestBody {
   question?: string;
   answer?: string;
   testResult?: string;
+  // Layer 2 specific:
+  extraPhotoKind?: ExtraPhotoKind;
   // Persistence — opt-in. Requires authenticated session + farmId.
   persist?: boolean;
   farmId?: string;
@@ -123,10 +137,15 @@ export async function POST(request: Request) {
           body.photoBase64,
           body.photoMimeType
         );
+        // cropMismatch is now a soft warning surfaced in the response —
+        // the UI shows it prominently but offers an override. We always
+        // return the next history questions so the override is just a
+        // UI decision, no extra round-trip needed.
         return NextResponse.json({
           session: result.session,
           observations: result.observations,
           photoQuality: result.photoQuality,
+          cropMismatch: result.cropMismatch,
           nextHistoryQuestions: getHistoryQuestions(result.session, 3),
         });
       }
@@ -176,6 +195,45 @@ export async function POST(request: Request) {
       case "finalise": {
         if (!body.session) return badRequest("`session` required");
         const result = finalise(body.session);
+        const persisted = await maybePersist(body, body.session, result);
+        return NextResponse.json({
+          result,
+          persisted,
+        });
+      }
+
+      // ─── Layer 2 (duo-layer) ──────────────────────────────────
+      case "layer_two_plan": {
+        if (!body.session) return badRequest("`session` required");
+        const plan = getLayerTwoPlan(body.session);
+        return NextResponse.json({
+          layerOneResult: plan.layerOneResult,
+          requests: plan.requests,
+        });
+      }
+
+      case "extra_photo": {
+        if (!body.session) return badRequest("`session` required");
+        if (!body.photoBase64 || !body.photoMimeType) {
+          return badRequest("`photoBase64` and `photoMimeType` required");
+        }
+        // extraPhotoKind is now optional — when undefined we treat the
+        // photo as a generic close-up. The vision flow handles both.
+        const result = await applyExtraPhoto(
+          body.session,
+          body.extraPhotoKind,
+          body.photoBase64,
+          body.photoMimeType
+        );
+        return NextResponse.json({
+          session: result.session,
+          observations: result.observations,
+        });
+      }
+
+      case "finalise_duo": {
+        if (!body.session) return badRequest("`session` required");
+        const result = finaliseDuoLayer(body.session);
         const persisted = await maybePersist(body, body.session, result);
         return NextResponse.json({
           result,

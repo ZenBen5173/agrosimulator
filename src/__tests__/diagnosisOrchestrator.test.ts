@@ -275,6 +275,7 @@ describe("orchestrator: analysePhoto (mocked)", () => {
       ],
       photoQuality: "good" as const,
       photoQualityNote: null,
+      cropMismatch: { detected: false, actualPlant: null, note: null },
     });
 
     const result = await analysePhoto(session, "fakebase64", "image/jpeg");
@@ -317,6 +318,7 @@ describe("orchestrator: analysePhoto (mocked)", () => {
       ],
       photoQuality: "good" as const,
       photoQualityNote: null,
+      cropMismatch: { detected: false, actualPlant: null, note: null },
     });
 
     const result = await analysePhoto(session, "fake", "image/jpeg");
@@ -368,6 +370,7 @@ describe("orchestrator: full happy-path (chilli anthracnose, mocked vision)", ()
         "chilli_cmv",
         "chilli_tswv",
         "chilli_pmmov",
+        "chilli_tmv",
         "chilli_calcium_def_blossom_end_rot",
         "chilli_magnesium_deficiency",
         "chilli_nitrogen_deficiency",
@@ -381,6 +384,7 @@ describe("orchestrator: full happy-path (chilli anthracnose, mocked vision)", ()
         "chilli_mealybug_damage",
         "chilli_root_knot_nematode",
         "chilli_fusarium_wilt",
+        "chilli_verticillium_wilt",
         "chilli_damping_off",
         "chilli_phytophthora_blight",
         "chilli_choanephora_wet_rot",
@@ -429,6 +433,7 @@ describe("orchestrator: full happy-path (chilli anthracnose, mocked vision)", ()
       ],
       photoQuality: "good" as const,
       photoQualityNote: null,
+      cropMismatch: { detected: false, actualPlant: null, note: null },
     });
     const photoResult = await analysePhoto(session, "fake", "image/jpeg");
     session = photoResult.session;

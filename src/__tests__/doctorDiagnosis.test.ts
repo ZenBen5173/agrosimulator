@@ -13,6 +13,8 @@ import {
   selectHistoryQuestions,
   buildPrescription,
   assembleDiagnosis,
+  getExtraPhotoRequests,
+  normaliseHistoryAnswer,
 } from "@/lib/diagnosis/decisionLogic";
 import {
   MALAYSIA_RULES,
@@ -203,16 +205,17 @@ describe("normaliseCandidates", () => {
     expect(sum).toBeCloseTo(1, 5);
   });
 
-  it("excludes ruled-out from normalisation and caps lone survivor at 0.84", () => {
+  it("excludes ruled-out from normalisation and caps lone survivor at 0.90", () => {
     const candidates: DifferentialCandidate[] = [
       { diseaseId: "a", name: "A", probability: 0.5, ruledOut: false },
       { diseaseId: "b", name: "B", probability: 0.5, ruledOut: true, ruleOutReason: "x" },
     ];
     const result = normaliseCandidates(candidates);
     const inPlay = result.find((c) => c.diseaseId === "a")!;
-    // A lone survivor would naturally normalise to 1.0, but we cap it at 0.84
-    // so the outcome stays "uncertain" — our rules might be missing the real cause.
-    expect(inPlay.probability).toBeCloseTo(0.84, 5);
+    // A lone survivor would naturally normalise to 1.0; we cap at 0.90 so a
+    // textbook-clear single-disease photo can reach the "confirmed" outcome
+    // (>=0.85) while still leaving a 10% "I might be wrong" gap.
+    expect(inPlay.probability).toBeCloseTo(0.9, 5);
   });
 
   it("caps the strongest in-play candidate at 0.92 (multi-candidate ceiling)", () => {
@@ -471,5 +474,146 @@ describe("Malaysia rules table integrity", () => {
   it("ruleById finds existing rules", () => {
     expect(ruleById("chilli_anthracnose")).toBeDefined();
     expect(ruleById("nonexistent")).toBeUndefined();
+  });
+});
+
+// ─── Layer 2: getExtraPhotoRequests ─────────────────────────────
+
+describe("getExtraPhotoRequests (Layer 2 photo selection)", () => {
+  function makeCandidate(
+    id: string,
+    ruledOut = false
+  ): DifferentialCandidate {
+    return { diseaseId: id, name: id, probability: 0.3, ruledOut };
+  }
+
+  it("requests stem cross-section when 2+ vascular wilts are in play", () => {
+    const candidates = [
+      makeCandidate("chilli_verticillium_wilt"),
+      makeCandidate("chilli_fusarium_wilt"),
+      makeCandidate("chilli_anthracnose", true),
+    ];
+    const requests = getExtraPhotoRequests(candidates);
+    const kinds = requests.map((r) => r.kind);
+    expect(kinds).toContain("stem_cross_section");
+  });
+
+  it("adds stem-in-water request only when bacterial wilt is in play", () => {
+    const withBacterial = getExtraPhotoRequests([
+      makeCandidate("chilli_verticillium_wilt"),
+      makeCandidate("chilli_bacterial_wilt"),
+    ]);
+    const withoutBacterial = getExtraPhotoRequests([
+      makeCandidate("chilli_verticillium_wilt"),
+      makeCandidate("chilli_fusarium_wilt"),
+    ]);
+    expect(withBacterial.map((r) => r.kind)).toContain("stem_in_water");
+    expect(withoutBacterial.map((r) => r.kind)).not.toContain("stem_in_water");
+  });
+
+  it("requests new growth + fruit close-up when 2+ viruses are in play", () => {
+    const candidates = [
+      makeCandidate("chilli_chivmv"),
+      makeCandidate("chilli_amv"),
+      makeCandidate("chilli_cmv"),
+    ];
+    const requests = getExtraPhotoRequests(candidates);
+    const kinds = requests.map((r) => r.kind);
+    expect(kinds).toContain("new_growth_close_up");
+    expect(kinds).toContain("fruit_close_up");
+  });
+
+  it("requests cut fruit when 2+ fruit rot diseases are in play", () => {
+    const candidates = [
+      makeCandidate("chilli_anthracnose"),
+      makeCandidate("chilli_choanephora_wet_rot"),
+    ];
+    const requests = getExtraPhotoRequests(candidates);
+    expect(requests.map((r) => r.kind)).toContain("fruit_cut_open");
+  });
+
+  it("requests root close-up when a root problem is in play", () => {
+    const candidates = [makeCandidate("chilli_root_knot_nematode")];
+    const requests = getExtraPhotoRequests(candidates);
+    expect(requests.map((r) => r.kind)).toContain("root_close_up");
+  });
+
+  it("requests leaf underside when a foliar pest is in play", () => {
+    const candidates = [
+      makeCandidate("chilli_spider_mite_damage"),
+      makeCandidate("chilli_iron_deficiency"),
+    ];
+    const requests = getExtraPhotoRequests(candidates);
+    expect(requests.map((r) => r.kind)).toContain("leaf_underside");
+  });
+
+  it("returns at most 3 requests so the farmer isn't overwhelmed", () => {
+    const candidates = [
+      // Trigger ALL groups
+      makeCandidate("chilli_verticillium_wilt"),
+      makeCandidate("chilli_fusarium_wilt"),
+      makeCandidate("chilli_bacterial_wilt"),
+      makeCandidate("chilli_chivmv"),
+      makeCandidate("chilli_amv"),
+      makeCandidate("chilli_anthracnose"),
+      makeCandidate("chilli_choanephora_wet_rot"),
+      makeCandidate("chilli_root_knot_nematode"),
+      makeCandidate("chilli_spider_mite_damage"),
+    ];
+    const requests = getExtraPhotoRequests(candidates);
+    expect(requests.length).toBeLessThanOrEqual(3);
+  });
+
+  it("returns empty array when only one strong candidate remains", () => {
+    const candidates = [
+      makeCandidate("chilli_anthracnose"),
+      makeCandidate("chilli_cercospora", true),
+      makeCandidate("chilli_phosphorus_deficiency", true),
+    ];
+    const requests = getExtraPhotoRequests(candidates);
+    // Anthracnose alone — fruit_cut_open needs ≥2 rot candidates
+    expect(requests).toEqual([]);
+  });
+
+  it("skips ruled-out candidates when picking groups", () => {
+    const candidates = [
+      makeCandidate("chilli_verticillium_wilt"),
+      makeCandidate("chilli_fusarium_wilt", true), // ruled out
+    ];
+    const requests = getExtraPhotoRequests(candidates);
+    // Only one wilt left → no stem cross-section request (needs ≥2)
+    expect(requests.map((r) => r.kind)).not.toContain("stem_cross_section");
+  });
+});
+
+// ─── normaliseHistoryAnswer (free-text → canonical) ─────────────
+
+describe("normaliseHistoryAnswer", () => {
+  it("maps English keywords to canonical weather values", () => {
+    expect(normaliseHistoryAnswer("weather", "It rained heavily for 4 days"))
+      .toBe("rainy");
+    expect(normaliseHistoryAnswer("weather", "Hot and dry, scorching all week"))
+      .toBe("hot_dry");
+  });
+
+  it("maps Bahasa Malaysia keywords too", () => {
+    expect(normaliseHistoryAnswer("weather", "Hujan lebat seminggu"))
+      .toBe("rainy");
+    expect(normaliseHistoryAnswer("soil_drainage", "Tanah selalu tergenang air"))
+      .toBe("waterlogged");
+  });
+
+  it("returns null when no keyword matches (raw text preserved upstream)", () => {
+    expect(normaliseHistoryAnswer("weather", "asdfqwer")).toBeNull();
+  });
+
+  it("handles fast-path of already-canonical input from button taps", () => {
+    expect(normaliseHistoryAnswer("weather", "rainy")).toBe("rainy");
+    expect(normaliseHistoryAnswer("soil_drainage", "waterlogged"))
+      .toBe("waterlogged");
+  });
+
+  it("is case-insensitive and trims", () => {
+    expect(normaliseHistoryAnswer("weather", "  RAIN  ")).toBe("rainy");
   });
 });

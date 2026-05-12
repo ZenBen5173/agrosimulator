@@ -37,6 +37,12 @@ yarn-error.log*
 # synced from Notion — do not edit manually
 CLAUDE.md
 
+# Internal planning / strategy / demo docs — keep out of the public repo.
+# README.md and SYSTEM_DESIGN.md remain tracked for the public submission.
+AGROSIM_2.0.md
+DEMO_PLAN_2.0.md
+DEMO_SCRIPT.md
+
 # Claude Code
 .claude/
 

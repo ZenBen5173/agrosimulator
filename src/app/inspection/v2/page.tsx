@@ -14,12 +14,23 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Camera, ImagePlus, Stethoscope, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  ImagePlus,
+  AlertTriangle,
+  Sparkles,
+  Stethoscope,
+  X,
+} from "lucide-react";
 import type {
   CropName,
   DiagnosisResult,
   DiagnosisSession,
   DifferentialCandidate,
+  ExtraPhotoKind,
+  ExtraPhotoRequest,
   HistoryQuestion,
   PhysicalTestPrompt,
   SpreadPattern,
@@ -31,13 +42,22 @@ type Stage =
   | "photo"
   | "history"
   | "test"
-  | "result";
+  | "result"
+  | "wrong_crop"   // photo shows a different plant than the chosen crop
+  | "extra_photos" // Layer 2: collecting targeted close-ups
+  | "result_duo";  // Layer 2 final result with confidence diff
+
+interface CropMismatch {
+  detected: boolean;
+  actualPlant: string | null;
+  note: string | null;
+}
 
 /**
  * Which API step is currently in flight. Drives the progress loader so it
  * shows realistic step-by-step labels and an honest expected duration —
- * "photo" is the slow one (Gemini Vision call, typically 8-15s); the rest
- * are deterministic and return in under a second.
+ * "photo" / "extra_photo" are the slow ones (Gemini Vision call, typically
+ * 8-15s); the rest are deterministic and return in under a second.
  */
 type LoadingStep =
   | "start"
@@ -45,7 +65,10 @@ type LoadingStep =
   | "photo"
   | "history"
   | "test"
-  | "finalise";
+  | "finalise"
+  | "layer_two_plan"
+  | "extra_photo"
+  | "finalise_duo";
 
 const PATTERN_OPTIONS: {
   value: SpreadPattern;
@@ -71,6 +94,16 @@ export default function DoctorDiagnosisPage() {
     null
   );
   const [result, setResult] = useState<DiagnosisResult | null>(null);
+  const [cropMismatch, setCropMismatch] = useState<CropMismatch | null>(null);
+  // Layer 2 state — only populated when the farmer chooses "get a clearer
+  // answer" from the Layer 1 result page. The Layer 1 result is preserved
+  // so the result_duo screen can show the confidence diff.
+  const [layerOneResult, setLayerOneResult] = useState<DiagnosisResult | null>(
+    null
+  );
+  const [extraPhotoRequests, setExtraPhotoRequests] = useState<
+    ExtraPhotoRequest[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<LoadingStep | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +145,13 @@ export default function DoctorDiagnosisPage() {
     setStage("photo");
   }
 
+  // When the model flags cropMismatch, we still get back nextHistoryQuestions
+  // so the override path can resume the normal flow. Cache them here so the
+  // "It IS a chilli" override button can pick up where uploadPhoto would.
+  const [pendingNextQuestions, setPendingNextQuestions] = useState<
+    HistoryQuestion[]
+  >([]);
+
   async function uploadPhoto(file: File) {
     if (!session) return;
     const base64 = await fileToBase64(file);
@@ -123,19 +163,50 @@ export default function DoctorDiagnosisPage() {
     });
     setSession(data.session);
     setObservations(data.observations || []);
-    if (data.nextHistoryQuestions && data.nextHistoryQuestions.length > 0) {
-      setPendingHistoryQuestion(data.nextHistoryQuestions[0]);
+    setPendingNextQuestions(data.nextHistoryQuestions || []);
+    // Crop mismatch is a SOFT warning — show the wrong-crop screen first,
+    // but the differential is intact in the session and the farmer can
+    // override ("It IS a chilli — diagnose anyway") to continue the normal
+    // flow. The farmer always knows their crop better than the AI.
+    if (data.cropMismatch?.detected) {
+      setCropMismatch(data.cropMismatch);
+      setStage("wrong_crop");
+      return;
+    }
+    proceedAfterPhoto(data.session, data.nextHistoryQuestions || []);
+  }
+
+  /**
+   * Continue the normal flow after a photo has been analysed. Extracted so
+   * both the regular path and the cropMismatch override path can reuse it.
+   */
+  async function proceedAfterPhoto(
+    s: DiagnosisSession,
+    nextQuestions: HistoryQuestion[]
+  ) {
+    if (nextQuestions.length > 0) {
+      setPendingHistoryQuestion(nextQuestions[0]);
       setStage("history");
     } else {
-      // Skip to physical test
-      const test = await getPhysicalTest(data.session);
+      const test = await getPhysicalTest(s);
       if (test) {
         setPhysicalTest(test);
         setStage("test");
       } else {
-        await finalise(data.session);
+        await finalise(s);
       }
     }
+  }
+
+  /**
+   * Override the cropMismatch warning. The session already has the model's
+   * differential probabilities — just dismiss the warning and resume the
+   * normal flow with the cached next-questions. No extra API call needed.
+   */
+  function overrideCropMismatch() {
+    if (!session) return;
+    setCropMismatch(null);
+    proceedAfterPhoto(session, pendingNextQuestions);
   }
 
   async function answerHistory(answer: string) {
@@ -180,14 +251,86 @@ export default function DoctorDiagnosisPage() {
     setStage("result");
   }
 
+  // ─── Layer 2: duo-layer diagnosis ───────────────────────────────
+
+  /**
+   * Triggered by the "Get a clearer answer" CTA on the Layer 1 result
+   * page. Asks the API which extra photos would actually help, snapshots
+   * the Layer 1 result (so we can show the diff later), then advances to
+   * the extra_photos stage.
+   */
+  async function startLayerTwo() {
+    if (!session || !result) return;
+    const data = await callApi({ step: "layer_two_plan", session });
+    setLayerOneResult(data.layerOneResult ?? result);
+    setExtraPhotoRequests(data.requests ?? []);
+    setStage("extra_photos");
+  }
+
+  /**
+   * Upload one extra Layer-2 photo. Kind is optional — when undefined, the
+   * photo goes through as a generic close-up (no kind hint to the model).
+   * The request list is left intact (suggestions can be tapped multiple
+   * times); the new UI doesn't gate on per-request completion.
+   */
+  async function uploadExtraPhoto(
+    kind: ExtraPhotoKind | undefined,
+    file: File
+  ) {
+    if (!session) return;
+    const base64 = await fileToBase64(file);
+    const data = await callApi({
+      step: "extra_photo",
+      session,
+      extraPhotoKind: kind,
+      photoBase64: base64,
+      photoMimeType: file.type,
+    });
+    setSession(data.session);
+  }
+
+  /**
+   * Farmer's done with extra photos (could be after 1, 2 or 3). Compute
+   * the Layer 2 result with lifted ceilings and show the diff.
+   */
+  async function finishLayerTwo() {
+    if (!session) return;
+    const data = await callApi({ step: "finalise_duo", session });
+    setResult(data.result);
+    setStage("result_duo");
+  }
+
   function reset() {
     setStage("crop");
     setSession(null);
     setObservations([]);
     setPendingHistoryQuestion(null);
+    setPendingNextQuestions([]);
     setPhysicalTest(null);
     setResult(null);
+    setCropMismatch(null);
+    setLayerOneResult(null);
+    setExtraPhotoRequests([]);
     setError(null);
+  }
+
+  /**
+   * Re-take photo only — keep the chosen crop and pattern answer, just go
+   * back to the photo picker. The session is preserved so we don't burn an
+   * extra API roundtrip on start/pattern.
+   */
+  function retakePhoto() {
+    setObservations([]);
+    setCropMismatch(null);
+    setStage("photo");
+  }
+
+  /**
+   * Different crop — full reset back to crop pick. Used when the photo
+   * actually shows a different species the farmer wants to inspect properly.
+   */
+  function changeCrop() {
+    reset();
   }
 
   return (
@@ -239,7 +382,11 @@ export default function DoctorDiagnosisPage() {
           stages that come AFTER analysePhoto has run.
         */}
         {session &&
-          (stage === "history" || stage === "test" || stage === "result") && (
+          (stage === "history" ||
+            stage === "test" ||
+            stage === "result" ||
+            stage === "extra_photos" ||
+            stage === "result_duo") && (
             <DifferentialLadder candidates={session.candidates} />
           )}
 
@@ -262,8 +409,42 @@ export default function DoctorDiagnosisPage() {
           />
         )}
 
+        {stage === "wrong_crop" && cropMismatch && (
+          <WrongCropStep
+            chosenCrop={crop}
+            mismatch={cropMismatch}
+            onRetake={retakePhoto}
+            onChangeCrop={changeCrop}
+            onOverride={overrideCropMismatch}
+            disabled={loading}
+          />
+        )}
+
         {stage === "result" && result && (
-          <ResultStep result={result} onReset={reset} />
+          <ResultStep
+            result={result}
+            onReset={reset}
+            onStartLayerTwo={
+              shouldOfferLayerTwo(result) ? startLayerTwo : undefined
+            }
+          />
+        )}
+
+        {stage === "extra_photos" && (
+          <ExtraPhotosStep
+            requests={extraPhotoRequests}
+            onUpload={uploadExtraPhoto}
+            onFinish={finishLayerTwo}
+            disabled={loading}
+          />
+        )}
+
+        {stage === "result_duo" && result && (
+          <ResultStep
+            result={result}
+            onReset={reset}
+            duoLayer={{ layerOneResult: layerOneResult ?? null }}
+          />
         )}
       </main>
     </div>
@@ -591,6 +772,19 @@ function HistoryStep({
   disabled: boolean;
   observations: string[];
 }) {
+  // Free-text answer state. Reset whenever the question changes (so the box
+  // doesn't carry text across questions).
+  const [freeText, setFreeText] = useState("");
+  useEffect(() => {
+    setFreeText("");
+  }, [question.id]);
+
+  function submitFreeText() {
+    const trimmed = freeText.trim();
+    if (!trimmed || disabled) return;
+    onAnswer(trimmed);
+  }
+
   return (
     <section className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
       {observations.length > 0 && (
@@ -604,6 +798,8 @@ function HistoryStep({
         </div>
       )}
       <h2 className="font-medium">{question.text}</h2>
+
+      {/* Predefined options — fastest path, one tap. */}
       <div className="grid gap-2">
         {question.options.map((opt) => (
           <button
@@ -615,6 +811,38 @@ function HistoryStep({
             {opt.label}
           </button>
         ))}
+      </div>
+
+      {/* Free-text fallback — for nuance the buttons can't capture.
+          The orchestrator runs typed answers through normaliseHistoryAnswer
+          (keyword match, BM + English) so the same probability boosts fire
+          as if the farmer tapped a button. The full typed text is preserved
+          in the historyAnswers log so reasoning stays transparent. */}
+      <div className="border-t border-stone-100 pt-3">
+        <label className="block text-[11px] uppercase tracking-wide text-stone-400 mb-1.5">
+          Or describe in your own words
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={freeText}
+            onChange={(e) => setFreeText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitFreeText();
+            }}
+            disabled={disabled}
+            placeholder="e.g. heavy rain Mon-Wed then sun"
+            className="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm placeholder:text-stone-400 focus:border-emerald-400 focus:outline-none disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={submitFreeText}
+            disabled={disabled || !freeText.trim()}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -650,12 +878,412 @@ function PhysicalTestStep({
   );
 }
 
+/**
+ * Shown when the vision model SUSPECTS the photo isn't actually the chosen
+ * crop. This is a SOFT warning — the farmer always knows their crop better
+ * than the AI does (lookalike vegetables, disease-distorted plants, etc.
+ * fool the model regularly), so we never block them. Three actions:
+ *   1. Retake the photo (most common — bad framing)
+ *   2. Pick a different crop (they actually grabbed the wrong plant)
+ *   3. "It IS a [crop] — diagnose anyway" — override and proceed with the
+ *      differential the model produced behind the warning. Costs zero
+ *      extra API calls because the analysis is already in the session.
+ */
+function WrongCropStep({
+  chosenCrop,
+  mismatch,
+  onRetake,
+  onChangeCrop,
+  onOverride,
+  disabled,
+}: {
+  chosenCrop: CropName;
+  mismatch: CropMismatch;
+  onRetake: () => void;
+  onChangeCrop: () => void;
+  onOverride: () => void;
+  disabled: boolean;
+}) {
+  const actual = mismatch.actualPlant?.trim();
+  return (
+    <section className="space-y-4">
+      <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4">
+        <div className="flex items-center gap-2 text-amber-900">
+          <AlertTriangle size={18} />
+          <span className="text-xs font-semibold uppercase tracking-wide">
+            Hmm — this might not be {chosenCrop}
+          </span>
+        </div>
+        <h2 className="text-lg font-semibold text-stone-900">
+          {actual
+            ? `I think this is a ${actual}, not ${chosenCrop}.`
+            : `I'm not sure this is a ${chosenCrop} plant.`}
+        </h2>
+        {mismatch.note && (
+          <p className="text-sm text-stone-700">{mismatch.note}</p>
+        )}
+        <p className="text-xs text-stone-500">
+          Disease can change how a plant looks, and lookalike vegetables fool
+          me sometimes. If you&apos;re sure it&apos;s {chosenCrop}, hit
+          &quot;diagnose anyway&quot; — you know your crop better than I do.
+        </p>
+      </div>
+
+      <div className="grid gap-2">
+        <button
+          onClick={onOverride}
+          disabled={disabled}
+          className="rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+        >
+          It IS a {chosenCrop} — diagnose anyway
+        </button>
+        <button
+          onClick={onRetake}
+          disabled={disabled}
+          className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-700 hover:border-emerald-400 disabled:opacity-50"
+        >
+          Retake photo of {chosenCrop}
+        </button>
+        <button
+          onClick={onChangeCrop}
+          disabled={disabled}
+          className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-500 hover:border-emerald-400 disabled:opacity-50"
+        >
+          Actually, pick a different crop
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ─── Layer 2: when to surface the "Get a clearer answer" CTA ───
+
+/**
+ * Predicate for showing the Layer 2 CTA on the Layer 1 result page. The
+ * gating is conservative: only offer Layer 2 when the answer is genuinely
+ * uncertain AND we know what extra photos would help (the orchestrator's
+ * `getExtraPhotoRequests` returns ≥1 request for our candidates). For the
+ * UI predicate we approximate with confidence < 0.85 — the API call to
+ * layer_two_plan will return an empty `requests` array if no targeted
+ * photos help, in which case startLayerTwo will surface a placeholder.
+ */
+function shouldOfferLayerTwo(result: DiagnosisResult): boolean {
+  return result.outcome !== "confirmed" || result.confidence < 0.85;
+}
+
+// ─── Layer 2 photo upload UI ───────────────────────────────────
+
+/**
+ * One uploaded Layer-2 photo, tracked in component state for thumbnails.
+ * The actual photos are sent to the server via onUpload and stored in
+ * `session.extraPhotos`; this is just for the local thumbnail strip.
+ */
+interface UploadedExtra {
+  id: string;
+  previewUrl: string;
+  kind?: ExtraPhotoKind; // optional hint if the farmer chose a suggested type
+  uploading: boolean;
+}
+
+/**
+ * Layer 2 UI. Old design forced the farmer to upload into specific labelled
+ * slots ("stem cross-section", "stem in water", etc.) which (a) required
+ * reading and (b) had a stuck-button bug. New design:
+ *   - Single big "Add another photo" upload area
+ *   - Uploaded photos appear as a thumbnail strip below
+ *   - Suggested photo types live in a collapsible "💡 Tip" panel for users
+ *     who DO want to be specific (tap a suggestion to attach a kind hint)
+ *   - Big "Show diagnosis" button enabled once any photo is uploaded
+ *
+ * The suggestions still drive the kind hint sent to Gemini when the farmer
+ * picks one — that's how the wilt/virus ceiling lifts in
+ * `finaliseDuoLayer` get unlocked. But the default path is friction-free.
+ */
+function ExtraPhotosStep({
+  requests,
+  onUpload,
+  onFinish,
+  disabled,
+}: {
+  requests: ExtraPhotoRequest[];
+  onUpload: (kind: ExtraPhotoKind | undefined, file: File) => void;
+  onFinish: () => void;
+  disabled: boolean;
+}) {
+  const [uploaded, setUploaded] = useState<UploadedExtra[]>([]);
+  const [pendingKind, setPendingKind] = useState<ExtraPhotoKind | undefined>(
+    undefined
+  );
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+
+  function handleFile(file: File | undefined | null) {
+    if (!file) return;
+    const id = `${file.name}-${Date.now()}`;
+    const previewUrl = URL.createObjectURL(file);
+    const kindForThis = pendingKind;
+    setUploaded((prev) => [
+      ...prev,
+      { id, previewUrl, kind: kindForThis, uploading: true },
+    ]);
+    onUpload(kindForThis, file);
+    setPendingKind(undefined); // suggestion consumed, reset
+    // Optimistically flip uploading=false after a short delay; the parent
+    // will have updated session by then. Doesn't gate the proceed button —
+    // that just needs >=1 photo in the list.
+    window.setTimeout(() => {
+      setUploaded((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, uploading: false } : u))
+      );
+    }, 600);
+  }
+
+  function removeUpload(id: string) {
+    setUploaded((prev) => {
+      const target = prev.find((u) => u.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((u) => u.id !== id);
+    });
+    // Note: we don't try to undo the server-side merge — once a photo has
+    // been sent, its evidence is folded into the differential. The
+    // thumbnail removal is purely visual cleanup.
+  }
+
+  const photosUploaded = uploaded.length;
+  const canProceed = !disabled && photosUploaded > 0;
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+        <div className="flex items-center gap-2 text-emerald-900">
+          <Sparkles size={14} />
+          <h2 className="text-sm font-semibold">
+            Layer 2 — add more photos for a clearer answer
+          </h2>
+        </div>
+        <p className="mt-1 text-xs text-emerald-800">
+          Upload one or more close-ups. A real plant doctor would ask for
+          more views to confirm the diagnosis.
+        </p>
+      </div>
+
+      {/* Hidden inputs */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+      />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+      />
+
+      {/* Single upload area */}
+      <div className="rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 p-5 space-y-3">
+        <div className="flex flex-col items-center text-center gap-1.5">
+          <ImagePlus size={28} className="text-stone-400" />
+          <div className="text-sm font-medium text-stone-700">
+            Add another photo
+          </div>
+          {pendingKind ? (
+            // Selected hint — whole chip is click-to-clear (bigger tap target
+            // than the tiny × button), with the × also still visible so the
+            // intent is obvious.
+            <button
+              type="button"
+              onClick={() => setPendingKind(undefined)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-200 transition-colors"
+              aria-label="Clear tag"
+            >
+              Tagged as: {labelForKind(pendingKind)}
+              <X size={11} />
+            </button>
+          ) : requests.length > 0 ? (
+            <p className="text-[11px] text-stone-400">
+              Optional: tap a hint below first to tell the doctor what
+              you&apos;re shooting
+            </p>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={disabled}
+            className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <Camera size={14} /> Use camera
+          </button>
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={disabled}
+            className="flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm font-medium text-stone-700 hover:border-emerald-400 disabled:opacity-50"
+          >
+            <ImagePlus size={14} /> From gallery
+          </button>
+        </div>
+      </div>
+
+      {/* Uploaded thumbnails */}
+      {uploaded.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-wide text-stone-400">
+            {uploaded.length} extra photo{uploaded.length === 1 ? "" : "s"} added
+          </div>
+          <div className="flex gap-2 overflow-x-auto">
+            {uploaded.map((u) => (
+              <div
+                key={u.id}
+                className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-stone-200 bg-stone-100"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={u.previewUrl}
+                  alt="Extra photo"
+                  className={`h-full w-full object-cover ${u.uploading ? "opacity-60" : ""}`}
+                />
+                {u.uploading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 text-[10px] font-medium text-white">
+                    …
+                  </div>
+                )}
+                <button
+                  onClick={() => removeUpload(u.id)}
+                  className="absolute right-0.5 top-0.5 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                  aria-label="Remove"
+                >
+                  <X size={11} />
+                </button>
+                {u.kind && (
+                  <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-0.5 text-[9px] text-white truncate">
+                    {labelForKind(u.kind)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Collapsible "what would help most" panel — entirely optional.
+          Tapping an already-selected suggestion toggles it OFF (no need to
+          hunt for the × on the chip). */}
+      {requests.length > 0 && (
+        <div className="rounded-xl border border-stone-200 bg-white">
+          <button
+            onClick={() => setSuggestionsOpen((o) => !o)}
+            className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+          >
+            <span className="text-xs font-medium text-stone-700">
+              💡 Optional hints — what would help most ({requests.length})
+            </span>
+            <span className="text-xs text-stone-400">
+              {suggestionsOpen ? "−" : "+"}
+            </span>
+          </button>
+          {suggestionsOpen && (
+            <div className="border-t border-stone-100 p-3 space-y-2">
+              <p className="text-[11px] text-stone-500">
+                Optional. Tap a hint to tag your next photo with extra
+                context for the doctor. Tap again to unselect.
+              </p>
+              {requests.map((req) => {
+                const isSelected = pendingKind === req.kind;
+                return (
+                  <button
+                    key={req.kind}
+                    onClick={() => setPendingKind(isSelected ? undefined : req.kind)}
+                    disabled={disabled}
+                    aria-pressed={isSelected}
+                    className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                      isSelected
+                        ? "border-emerald-400 bg-emerald-50"
+                        : "border-stone-200 bg-white hover:border-emerald-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium text-stone-900">
+                        {req.title}
+                      </div>
+                      {isSelected && (
+                        <span className="text-[10px] uppercase tracking-wide text-emerald-700">
+                          Selected · tap to unselect
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-stone-500">
+                      {req.why}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Proceed button */}
+      <button
+        onClick={onFinish}
+        disabled={!canProceed}
+        className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {photosUploaded === 0
+          ? "Add at least one photo to continue"
+          : `Show me the refined diagnosis (${photosUploaded} extra photo${photosUploaded === 1 ? "" : "s"})`}
+      </button>
+    </section>
+  );
+}
+
+/**
+ * Friendly human label for an ExtraPhotoKind, used in the thumbnail tag
+ * and the "tagged as" chip. Mirrors the titles in
+ * `getExtraPhotoRequests` so the same vocabulary is used everywhere.
+ */
+function labelForKind(kind: ExtraPhotoKind): string {
+  switch (kind) {
+    case "stem_cross_section":
+      return "Stem cross-section";
+    case "stem_in_water":
+      return "Stem in clear water";
+    case "new_growth_close_up":
+      return "New growth close-up";
+    case "fruit_close_up":
+      return "Fruit close-up";
+    case "fruit_cut_open":
+      return "Cut fruit";
+    case "leaf_underside":
+      return "Leaf underside";
+    case "root_close_up":
+      return "Roots";
+    case "whole_plant_pattern":
+      return "Whole plant";
+    case "side_by_side_healthy":
+      return "Side-by-side healthy";
+  }
+}
+
 function ResultStep({
   result,
   onReset,
+  onStartLayerTwo,
+  duoLayer,
 }: {
   result: DiagnosisResult;
   onReset: () => void;
+  /** When set, the Layer 1 result page shows the "Get a clearer answer" CTA. */
+  onStartLayerTwo?: () => void;
+  /** When set, this result IS Layer 2 — show the confidence diff vs Layer 1. */
+  duoLayer?: { layerOneResult: DiagnosisResult | null };
 }) {
   const outcomeColour =
     result.outcome === "confirmed"
@@ -664,8 +1292,45 @@ function ResultStep({
       ? "bg-amber-50 border-amber-300 text-amber-900"
       : "bg-stone-50 border-stone-300 text-stone-700";
 
+  // Duo-layer diff banner — shown only on the result_duo screen, summarises
+  // how Layer 2 changed the picture (was 70% wilt → now 88% Verticillium,
+  // etc.). Pure presentation; the actual computation happened server-side.
+  const layerOne = duoLayer?.layerOneResult ?? null;
+  const layerTwoUplift = layerOne
+    ? Math.round((result.confidence - layerOne.confidence) * 100)
+    : 0;
+
   return (
     <section className="space-y-4">
+      {layerOne && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+          <div className="flex items-center gap-2 text-emerald-900">
+            <Sparkles size={14} />
+            <span className="text-[11px] font-semibold uppercase tracking-wide">
+              Layer 2 result
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-emerald-900">
+            Was{" "}
+            <span className="font-semibold">
+              {layerOne.diagnosis?.name ?? "uncertain"}{" "}
+              {Math.round(layerOne.confidence * 100)}%
+            </span>{" "}
+            after the leaf photo. Your extra photos refined this to{" "}
+            <span className="font-semibold">
+              {result.diagnosis?.name ?? "uncertain"}{" "}
+              {Math.round(result.confidence * 100)}%
+            </span>
+            {layerTwoUplift !== 0 && (
+              <>
+                {" "}
+                ({layerTwoUplift > 0 ? "+" : ""}
+                {layerTwoUplift}% confidence).
+              </>
+            )}
+          </p>
+        </div>
+      )}
       <div className={`space-y-2 rounded-xl border p-4 ${outcomeColour}`}>
         <div className="text-xs uppercase tracking-wide">{result.outcome}</div>
         <h2 className="text-xl font-semibold">
@@ -783,6 +1448,18 @@ function ResultStep({
         </div>
       )}
 
+      {/* Layer 2 CTA — only shown on the Layer 1 result page when the
+          parent decided we should offer it (uncertain / non-confirmed). */}
+      {onStartLayerTwo && (
+        <button
+          onClick={onStartLayerTwo}
+          className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 flex items-center justify-center gap-2"
+        >
+          <Sparkles size={14} />
+          Get a clearer answer (Layer 2)
+        </button>
+      )}
+
       <button
         onClick={onReset}
         className="w-full rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm"
@@ -815,6 +1492,9 @@ const STEP_TAU_MS: Record<LoadingStep, number> = {
   history: 400,
   test: 400,
   finalise: 800,
+  layer_two_plan: 600,
+  extra_photo: 6000,
+  finalise_duo: 800,
 };
 
 const STEP_LABELS: Record<LoadingStep, { at: number; text: string }[]> = {
@@ -836,6 +1516,20 @@ const STEP_LABELS: Record<LoadingStep, { at: number; text: string }[]> = {
   finalise: [
     { at: 0, text: "Putting it all together…" },
     { at: 60, text: "Writing the prescription…" },
+  ],
+  layer_two_plan: [
+    { at: 0, text: "Working out what extra photos would help…" },
+  ],
+  extra_photo: [
+    { at: 0, text: "Compressing your close-up…" },
+    { at: 15, text: "Sending to the plant doctor…" },
+    { at: 35, text: "Comparing against the leading candidates…" },
+    { at: 65, text: "Updating the differential…" },
+    { at: 88, text: "Almost done…" },
+  ],
+  finalise_duo: [
+    { at: 0, text: "Combining the evidence…" },
+    { at: 50, text: "Writing the final diagnosis…" },
   ],
 };
 

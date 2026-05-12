@@ -722,6 +722,62 @@ const CHILLI_RULES: MalaysiaDiseaseRule[] = [
   },
 
   {
+    id: "chilli_tmv",
+    crop: "chilli",
+    name: "Tobacco Mosaic Virus (TMV)",
+    scientificName: "Tobacco mosaic virus (Tobamovirus)",
+    category: "viral",
+    signsPositive: [
+      "LIGHT-AND-DARK GREEN MOSAIC pattern on leaves — patchy, like camouflage (more pronounced than PMMoV's mild mottle)",
+      "leaves DISTORTED, sometimes 'fern-like' or 'shoestring' (severe strap-shaped narrowing) in advanced cases",
+      "stunted plant growth, shortened internodes",
+      "fruit usually unaffected and safe to eat (KEY DIFFERENCE from PMMoV which deforms fruit)",
+      "spreads by HANDLING / TOOLS — tobacco contact is the classic route (smoker's hands transfer it)",
+      "extremely persistent — survives for years on dried plant debris and tobacco products",
+    ],
+    ruleOutClauses: [
+      {
+        ifAbsent: "any mosaic / mottle / patchy chlorosis on leaves",
+        thereforeNot:
+          "TMV's signature is the leaf mosaic. Leaves with no patchy colour change are not TMV",
+      },
+      {
+        ifAbsent: "history of tobacco handling OR contact-transmission pathway",
+        thereforeNot:
+          "TMV is mechanically spread (no insect vector). Without a contact pathway, aphid-borne viruses (CMV / AMV / ChiVMV) are more likely",
+      },
+      {
+        ifAbsent: "leaves still mostly normal-shaped",
+        thereforeNot:
+          "if leaves are NOT distorted at all, suspect early CMV or AMV instead — TMV usually distorts leaf shape",
+      },
+    ],
+    bestTest: {
+      test: "no_test_needed",
+      instruction:
+        "Compare leaves AND fruit. Is the leaf mosaic pronounced AND fruit looks normal? Did anyone handle tobacco before touching the plants?",
+      expectedResult:
+        "leaf mosaic + leaf distortion + normal fruit + tobacco-contact history = consistent with TMV (lab confirmation needed)",
+    },
+    treatment: {
+      chemical: undefined,
+      cultural: [
+        "REMOVE and BURN infected plants — virus is incurable and very persistent",
+        "wash hands and disinfect tools (skim milk or 10% trisodium phosphate) between plants",
+        "smokers must wash hands BEFORE touching chilli — tobacco products carry TMV",
+        "do NOT use tobacco mulch or tobacco-derived pesticides near chilli",
+      ],
+      preventRecurrence: [
+        "plant TMV-resistant cultivars (carry L-gene resistance like L1 or higher)",
+        "isolate workers who handle tobacco from chilli operations",
+        "soak seeds in 10% trisodium phosphate for 15 min before sowing",
+        "rotate plot away from solanaceae for 2 seasons",
+        "lab confirmation (ELISA) at MARDI — TMV vs PMMoV vs mild CMV cannot be told apart by eye alone",
+      ],
+    },
+  },
+
+  {
     id: "chilli_calcium_def_blossom_end_rot",
     crop: "chilli",
     name: "Blossom End Rot (Calcium Deficiency)",
@@ -963,28 +1019,36 @@ const CHILLI_RULES: MalaysiaDiseaseRule[] = [
     scientificName: "Fusarium oxysporum f.sp. capsici",
     category: "fungal",
     signsPositive: [
-      "gradual wilting of one branch or one side of the plant first, then spreading",
-      "leaves yellow and die from the bottom up",
-      "vascular tissue inside stem turns brown when cut crosswise",
+      // PHOTO-VISIBLE signs:
+      "gradual wilting of one branch or one side of the plant first, then spreading symmetrically",
+      "leaves yellow and die from the BOTTOM UP — older leaves first, advancing upward",
+      "wilted leaves often DROP off cleanly (Verticillium tends to leave them hanging)",
       "wilt does not recover overnight (unlike water stress)",
+      "scattered diseased plants in patches; common in lowland warm-soil chilli plots",
+      // STEM-CUT confirmation (NOT a photo sign — stays in bestTest):
+      "vascular tissue inside stem turns DARK CHOCOLATE BROWN when cut crosswise, browning concentrated at the crown",
       "no milky bacterial ooze when cut stem suspended in water (DIFFERENT from bacterial wilt)",
     ],
     ruleOutClauses: [
       {
-        ifAbsent: "gradual wilt that doesn't recover",
-        thereforeNot: "Fusarium causes a slow progressive wilt; sudden whole-plant collapse points to bacterial wilt instead",
+        ifAbsent: "gradual wilt + lower-leaf yellowing first",
+        thereforeNot: "Fusarium causes a slow progressive wilt that ascends from old leaves up. Sudden whole-plant collapse points to bacterial wilt; top-only yellowing points to nutrient issues",
       },
       {
-        ifAbsent: "internal vascular browning when stem cut",
-        thereforeNot: "vascular browning is the diagnostic for Fusarium; clear stem internals point to other causes",
+        ifAbsent: "any wilt or leaf decline in OLDER leaves",
+        thereforeNot:
+          "Fusarium's signature is bottom-up wilt. If only fruit lesions or top-leaf changes are visible, look at anthracnose / nutrient causes instead",
       },
+      // NOTE: separating Fusarium from Verticillium / bacterial wilt requires a stem-cut
+      // (vascular colour + ooze) — that's the bestTest, not a photo rule-out. From a leaf
+      // photo all three vascular wilts look similar; we surface them all and let the test resolve.
     ],
     bestTest: {
       test: "stem_ooze_water_glass",
       instruction:
-        "Cut a wilted stem near the base. (1) Look at the cross-section: vascular ring brown? (2) Suspend the cut end in clear water 3 minutes — does milky stream of bacteria flow out?",
+        "Cut a wilted stem near the base. (1) Look at the cross-section: vascular ring brown? Where does the discoloration stop? (2) Suspend the cut end in clear water 3 minutes — does milky stream of bacteria flow out?",
       expectedResult:
-        "brown vascular ring + NO milky ooze = Fusarium wilt; brown vascular + milky ooze = bacterial wilt instead",
+        "dark chocolate-brown vascular ring at base + NO milky ooze = Fusarium wilt; lighter tan streak extending higher up stem = Verticillium; brown + milky ooze = bacterial wilt instead",
     },
     treatment: {
       chemical: undefined,
@@ -999,6 +1063,71 @@ const CHILLI_RULES: MalaysiaDiseaseRule[] = [
         "raise soil pH to 6.5-7.0 with lime (Fusarium less aggressive in alkaline soils)",
         "biological soil drench with Trichoderma at planting",
       ],
+    },
+  },
+
+  {
+    id: "chilli_verticillium_wilt",
+    crop: "chilli",
+    name: "Verticillium Wilt",
+    scientificName: "Verticillium dahliae",
+    category: "fungal",
+    signsPositive: [
+      // PHOTO-VISIBLE signs (what the vision model can actually see):
+      "WILTING with leaves drooping despite plant being upright (not collapsed flat like bacterial wilt)",
+      "ONE-SIDED progression — one branch or half of plant wilts and browns BEFORE the other side",
+      "INTERVEINAL yellowing on leaves: green veins remain, tissue between turns yellow then brown",
+      "V-SHAPED chlorotic / necrotic patches on leaves, often pointing inward from leaf margin",
+      "lower / older leaves affected first; upper leaves stay greener until late stages",
+      "leaves curl, dry up and HANG ON the plant (do not drop cleanly like Fusarium often does)",
+      "scattered patches of dying plants in the field, not a uniform sweep — soil-borne, builds outward over seasons",
+      // CONTEXT signs (history-question / location, not photo):
+      "more common in highlands (Cameron, Lojing) where soils stay cooler; less common in lowland heat",
+      "huge soilborne host range (200+ species) — persists for years on weeds, tomato, sunflower, eggplant",
+    ],
+    ruleOutClauses: [
+      {
+        ifAbsent: "any wilting OR yellowing OR browning of leaves",
+        thereforeNot:
+          "Verticillium presents as wilt + leaf decline. Healthy-looking plants without these symptoms are not Verticillium",
+      },
+      {
+        ifAbsent: "lower / older leaves affected at all (only top leaves yellow)",
+        thereforeNot:
+          "Verticillium ascends from roots through the vascular system, hitting older leaves first. Top-leaf-only yellowing points to iron / sulphur deficiency or upper-canopy diseases instead",
+      },
+      // NOTE: the stem-cut differentiator (vascular streaking, ooze test) belongs in the
+      // bestTest below, NOT here — the photo step never sees a stem cross-section, so
+      // rule-outs that require that info would force false negatives.
+    ],
+    bestTest: {
+      test: "stem_ooze_water_glass",
+      instruction:
+        "Cut a wilting stem 10-15 cm above the soil. Look at the cross-section. Then suspend the cut end in clear water for 3 minutes — does milky bacterial stream flow out?",
+      expectedResult:
+        "tan/grey-brown vascular streak extending up the stem + NO milky ooze = Verticillium wilt likely; chocolate-brown ring concentrated at base + no ooze = Fusarium; brown + milky ooze = bacterial wilt",
+    },
+    treatment: {
+      chemical: undefined,
+      cultural: [
+        "REMOVE and BURN affected plants WITH 30 cm soil ball — Verticillium microsclerotia survive 10+ years in soil",
+        "no rescue chemical treatment — focus on preventing spread to healthy plants",
+        "disinfect tools (70% alcohol or 10% bleach) between plants",
+        "irrigate evenly — drought stress amplifies Verticillium symptoms",
+      ],
+      preventRecurrence: [
+        "send symptomatic stem to MARDI for lab confirmation — only culture/PCR reliably separates Verticillium from Fusarium",
+        "ROTATE away from solanaceae (chilli/tomato/eggplant/potato) AND cucurbits AND sunflower for 4-6 seasons — wide host range",
+        "plant cereals (paddy, maize) or alliums in rotation — they're poor Verticillium hosts",
+        "soil solarisation (clear plastic, 6-8 weeks dry season) reduces microsclerotia population",
+        "use grafted seedlings on resistant rootstock where available",
+        "weed control — Verticillium hosts on solanaceous and composite weeds",
+      ],
+    },
+    weatherTrigger: {
+      description:
+        "cooler soil (highlands, post-rain dips) favours Verticillium over Fusarium",
+      consecutiveRainyDays: 3,
     },
   },
 

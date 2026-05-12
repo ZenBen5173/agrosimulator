@@ -130,6 +130,53 @@ export interface DiagnosisResult {
 }
 
 /**
+ * Kinds of targeted photos we can ask the farmer to take in Layer 2 of the
+ * duo-layer diagnosis flow. Each kind discriminates a SPECIFIC group of
+ * candidates that look identical in the original whole-plant photo.
+ *
+ * Adding a new kind: also wire it up in
+ *   - decisionLogic.getExtraPhotoRequests (when to request)
+ *   - the system prompt in doctorDiagnosis.ts (how to interpret it)
+ *   - inspection/v2 page UI (label + instruction for the farmer)
+ */
+export type ExtraPhotoKind =
+  | "stem_cross_section"      // Verticillium / Fusarium / bacterial wilt
+  | "stem_in_water"           // bacterial wilt ooze test photo
+  | "new_growth_close_up"     // virus vein-banding / blotch / ring patterns
+  | "fruit_close_up"          // virus fruit deformation / fruit lesions
+  | "fruit_cut_open"          // anthracnose vs Choanephora vs soft rot
+  | "leaf_underside"          // mites, downy mildew, aphid colonies
+  | "root_close_up"           // nematode galls vs Phytophthora rot
+  | "whole_plant_pattern"     // one-sided wilt vs symmetric collapse
+  | "side_by_side_healthy";   // colour comparison for nutrient deficiency
+
+/**
+ * One Layer-2 photo request shown to the farmer. Selected by
+ * `getExtraPhotoRequests` based on which candidates remain in play after
+ * Layer 1.
+ */
+export interface ExtraPhotoRequest {
+  kind: ExtraPhotoKind;
+  title: string;        // "Stem cross-section"
+  why: string;          // user-facing rationale: "this tells Verticillium from Fusarium"
+  instruction: string;  // step-by-step: "cut the stem 10cm above soil..."
+  /** Candidate IDs this photo is intended to discriminate between */
+  discriminates: string[];
+}
+
+/**
+ * One captured Layer-2 photo with the model's per-photo observations.
+ * Stored in the session so the case package is auditable.
+ */
+export interface ExtraPhoto {
+  kind: ExtraPhotoKind;
+  base64: string;
+  mime: string;
+  observations: string[];
+  takenAt: string; // ISO
+}
+
+/**
  * The complete state of an in-progress diagnosis session, persisted between
  * steps so each call to the AI is stateless.
  */
@@ -163,6 +210,15 @@ export interface DiagnosisSession {
     consecutiveHotDays?: number;
   };
 
-  // Final diagnosis (only set on completion)
+  // ─── Layer 2 (duo-layer diagnosis) ────────────────────────────
+  // Set when Layer 1 completed with confidence < 0.85 and the farmer chose
+  // to add more evidence. Each extra photo lifts the ceiling on the wilt/
+  // virus differentials because corroborating views = honest higher
+  // confidence (a leaf photo + a stem cross-section actually CAN tell
+  // Verticillium from Fusarium, where a leaf alone cannot).
+  layerOneResult?: DiagnosisResult; // snapshot of Layer 1 outcome before Layer 2 ran
+  extraPhotos?: ExtraPhoto[];
+
+  // Final diagnosis (only set on completion — may be Layer 1 or Layer 2)
   result?: DiagnosisResult;
 }
