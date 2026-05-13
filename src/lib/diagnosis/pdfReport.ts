@@ -96,15 +96,19 @@ export async function buildDiagnosisReportPdf(
     farmDistrict: opts?.farmDistrict,
   };
 
+  // Layout order = the order a Malaysian farmer + MARDI officer want to
+  // read it. Verdict first, action second, evidence third, audit trail
+  // last. This is the opposite of the original "form-style" ordering
+  // (case ref → patient → history → diagnosis) which buried the actual
+  // answer behind 4 sections of preamble.
   drawHeader(ctx);
-  drawCaseBlock(ctx);
-  drawPatientBlock(ctx);
-  drawHistoryBlock(ctx);
-  drawDiagnosisHero(ctx);
-  drawReasoning(ctx);
-  drawPrescription(ctx);
-  drawFollowUp(ctx);
-  drawTechnicalReference(ctx);
+  drawDiagnosisHero(ctx);   // 1. THE ANSWER — huge, top of page
+  drawPrescription(ctx);    // 2. WHAT TO DO — bordered "action" boxes
+  drawReasoning(ctx);       // 3. WHY — confidence + ruled out
+  drawCaseStrip(ctx);       // 4. CASE FACTS — compact one-line strip
+  drawHistoryBlock(ctx);    // 5. WHAT THE FARMER SAID — for the MARDI officer
+  drawFollowUp(ctx);        // 6. WHEN TO CHECK BACK
+  drawTechnicalReference(ctx); // 7. AUDIT TRAIL — small, lightest
 
   // Page-number stamps + footer — done in a second pass so all pages
   // know the final total.
@@ -155,10 +159,11 @@ function drawText(
     indent?: number;
     bottomGap?: number;
     maxWidth?: number;
+    italics?: boolean;
   } = {}
 ) {
   const size = opts.size ?? 11;
-  const fnt = opts.font ?? ctx.font;
+  const fnt = opts.font ?? (opts.italics ? ctx.fontItalic : ctx.font);
   const color = opts.color ?? COLOR_INK;
   const x = opts.x ?? MARGIN + (opts.indent ?? 0);
   const maxW = opts.maxWidth ?? CONTENT_W - (opts.indent ?? 0);
@@ -192,33 +197,38 @@ function drawDivider(ctx: ReportContext, color = COLOR_LINE, gap = 6) {
   ctx.y -= gap;
 }
 
-function drawSectionHeading(ctx: ReportContext, bm: string, en: string) {
-  newPageIfNeeded(ctx, 26);
-  ctx.y -= 14;
-  // BM label (bigger, primary) + English (smaller, italic, secondary)
-  ctx.page.drawText(bm.toUpperCase(), {
+function drawSectionHeading(ctx: ReportContext, en: string, bm?: string) {
+  newPageIfNeeded(ctx, 28);
+  ctx.y -= 18;
+  // English first (primary, larger), optional BM in parens (smaller, muted).
+  // Heavy bilingual headers (TANAMAN · Crop & plot) doubled the visual
+  // weight of every section — most farmers + judges scan the English
+  // first; BM on row labels is overkill.
+  ctx.page.drawText(safe(en), {
     x: MARGIN,
     y: ctx.y,
-    size: 9,
+    size: 11,
     font: ctx.fontBold,
     color: COLOR_INK,
   });
-  const bmW = ctx.fontBold.widthOfTextAtSize(bm.toUpperCase(), 9);
-  ctx.page.drawText(`  ·  ${en}`, {
-    x: MARGIN + bmW,
-    y: ctx.y,
-    size: 9,
-    font: ctx.fontItalic,
-    color: COLOR_MUTED,
-  });
-  ctx.y -= 8;
+  if (bm) {
+    const enW = ctx.fontBold.widthOfTextAtSize(safe(en), 11);
+    ctx.page.drawText(safe(`  (${bm})`), {
+      x: MARGIN + enW,
+      y: ctx.y,
+      size: 9,
+      font: ctx.fontItalic,
+      color: COLOR_MUTED,
+    });
+  }
+  ctx.y -= 6;
   ctx.page.drawLine({
     start: { x: MARGIN, y: ctx.y },
     end: { x: PAGE_W - MARGIN, y: ctx.y },
-    thickness: 1,
-    color: COLOR_INK,
+    thickness: 0.6,
+    color: COLOR_LINE,
   });
-  ctx.y -= 8;
+  ctx.y -= 10;
 }
 
 function drawLabelValueRow(ctx: ReportContext, label: string, value: string) {
@@ -326,40 +336,45 @@ function drawHeader(ctx: ReportContext) {
   ctx.y -= 8;
 }
 
-function drawCaseBlock(ctx: ReportContext) {
+/**
+ * Compact one-line "case facts" strip — replaces the old drawCaseBlock
+ * which used 4 separate label/value rows. Now reads as a single muted
+ * line of metadata so it doesn't compete with the diagnosis hero or
+ * treatment box for attention.
+ */
+function drawCaseStrip(ctx: ReportContext) {
   const date = new Date(ctx.session.startedAt);
-  const dateBm = date.toLocaleDateString("en-GB", {
+  const dateStr = date.toLocaleDateString("en-GB", {
     day: "2-digit",
-    month: "long",
+    month: "short",
     year: "numeric",
   });
   const ref = makeCaseRef(ctx.session);
 
-  drawLabelValueRow(ctx, "Rujukan / Ref:", ref);
-  drawLabelValueRow(ctx, "Tarikh / Date:", dateBm);
-  if (ctx.farmerName) drawLabelValueRow(ctx, "Petani / Farmer:", ctx.farmerName);
-  if (ctx.farmDistrict) drawLabelValueRow(ctx, "Daerah / District:", ctx.farmDistrict);
-}
+  const parts: string[] = [];
+  parts.push(`Ref: ${ref}`);
+  parts.push(`Date: ${dateStr}`);
+  parts.push(`Crop: ${cropDisplay(ctx.session.crop)}`);
+  if (ctx.session.plotLabel) parts.push(`Plot: ${ctx.session.plotLabel}`);
+  if (ctx.farmerName) parts.push(`Farmer: ${ctx.farmerName}`);
+  if (ctx.farmDistrict) parts.push(`District: ${ctx.farmDistrict}`);
+  const stage = ctx.session.historyAnswers.find(
+    (h) => h.questionId === "plant_stage"
+  );
+  if (stage) parts.push(`Stage: ${stage.answer}`);
+  if (ctx.session.pattern) parts.push(`Pattern: ${patternDisplay(ctx.session.pattern)}`);
 
-function drawPatientBlock(ctx: ReportContext) {
-  drawSectionHeading(ctx, "Tanaman", "Crop & plot");
-  drawLabelValueRow(ctx, "Jenis / Type:", cropDisplay(ctx.session.crop));
-  if (ctx.session.plotLabel) {
-    drawLabelValueRow(ctx, "Plot:", ctx.session.plotLabel);
-  }
-  const stage = ctx.session.historyAnswers.find((h) => h.questionId === "plant_stage");
-  if (stage) {
-    drawLabelValueRow(ctx, "Tahap / Stage:", stage.answer);
-  }
-  const pattern = ctx.session.pattern;
-  if (pattern) {
-    drawLabelValueRow(ctx, "Pattern:", patternDisplay(pattern));
-  }
+  drawSectionHeading(ctx, "Case facts", "Maklumat kes");
+  drawText(ctx, parts.join("   ·   "), {
+    size: 9,
+    color: COLOR_MUTED,
+    bottomGap: 4,
+  });
 }
 
 function drawHistoryBlock(ctx: ReportContext) {
   if (ctx.session.historyAnswers.length === 0) return;
-  drawSectionHeading(ctx, "Sejarah", "What the farmer reported");
+  drawSectionHeading(ctx, "What the farmer reported", "Sejarah");
   for (const ha of ctx.session.historyAnswers) {
     drawText(ctx, `Q: ${ha.question}`, {
       size: 10,
@@ -376,7 +391,8 @@ function drawHistoryBlock(ctx: ReportContext) {
 }
 
 function drawDiagnosisHero(ctx: ReportContext) {
-  drawSectionHeading(ctx, "Diagnosis", "The verdict");
+  // No section heading — this IS the headline. Bigger, simpler, immediate.
+  ctx.y -= 12;
   const r = ctx.result;
   const outcome = r.outcome;
 
@@ -393,54 +409,85 @@ function drawDiagnosisHero(ctx: ReportContext) {
       ? COLOR_AMBER
       : COLOR_STONE;
 
-  const name = r.diagnosis?.name ?? "Tidak pasti / Cannot determine";
+  const name = r.diagnosis?.name ?? "Cannot determine";
   const sci = r.diagnosis?.scientificName ?? "";
   const conf = Math.round(r.confidence * 100);
-  const statusBm =
-    outcome === "confirmed"
-      ? "DISAHKAN"
-      : outcome === "uncertain"
-      ? "TIDAK PASTI"
-      : "TIDAK BOLEH TENTUKAN";
   const statusEn =
     outcome === "confirmed"
       ? "CONFIRMED"
       : outcome === "uncertain"
       ? "UNCERTAIN"
       : "CANNOT DETERMINE";
+  const statusBm =
+    outcome === "confirmed"
+      ? "Disahkan"
+      : outcome === "uncertain"
+      ? "Tidak pasti"
+      : "Tidak boleh tentukan";
 
-  drawColouredCard(ctx, 78, bg, border, () => {
-    ctx.page.drawText(safe(name), {
-      x: MARGIN + 14,
-      y: ctx.y - 22,
-      size: 16,
-      font: ctx.fontBold,
-      color: COLOR_INK,
-    });
-    if (sci) {
-      ctx.page.drawText(safe(sci), {
-        x: MARGIN + 14,
-        y: ctx.y - 40,
-        size: 10,
-        font: ctx.fontItalic,
-        color: COLOR_MUTED,
-      });
-    }
-    ctx.page.drawText(`Keyakinan / Confidence:  ${conf}%`, {
-      x: MARGIN + 14,
-      y: ctx.y - 60,
-      size: 10,
-      font: ctx.font,
-      color: COLOR_INK,
-    });
-    const statusText = `${statusBm}  ·  ${statusEn}`;
-    const statusW = ctx.fontBold.widthOfTextAtSize(statusText, 10);
-    ctx.page.drawText(statusText, {
-      x: PAGE_W - MARGIN - 14 - statusW,
+  drawColouredCard(ctx, 130, bg, border, () => {
+    // STATUS pill — top of card, small caps, coloured
+    ctx.page.drawText(safe(`${statusEn}  ·  ${statusBm}`), {
+      x: MARGIN + 18,
       y: ctx.y - 22,
       size: 10,
       font: ctx.fontBold,
       color: border,
+    });
+
+    // DIAGNOSIS NAME — huge, dominates the card
+    ctx.page.drawText(safe(name), {
+      x: MARGIN + 18,
+      y: ctx.y - 56,
+      size: 26,
+      font: ctx.fontBold,
+      color: COLOR_INK,
+    });
+
+    // SCIENTIFIC NAME — italic, muted, under the name
+    if (sci) {
+      ctx.page.drawText(safe(sci), {
+        x: MARGIN + 18,
+        y: ctx.y - 78,
+        size: 11,
+        font: ctx.fontItalic,
+        color: COLOR_MUTED,
+      });
+    }
+
+    // CONFIDENCE NUMBER — top-right, big and obvious
+    const confText = `${conf}%`;
+    const confW = ctx.fontBold.widthOfTextAtSize(confText, 36);
+    ctx.page.drawText(confText, {
+      x: PAGE_W - MARGIN - 18 - confW,
+      y: ctx.y - 56,
+      size: 36,
+      font: ctx.fontBold,
+      color: border,
+    });
+    const confLbl = "confidence";
+    const confLblW = ctx.font.widthOfTextAtSize(confLbl, 9);
+    ctx.page.drawText(confLbl, {
+      x: PAGE_W - MARGIN - 18 - confLblW,
+      y: ctx.y - 72,
+      size: 9,
+      font: ctx.font,
+      color: COLOR_MUTED,
+    });
+
+    // Bottom hairline + plain-language outcome statement
+    const outcomeLine =
+      outcome === "confirmed"
+        ? "We're confident — proceed with the treatment below."
+        : outcome === "uncertain"
+        ? "Best assessment — consider the second-opinion options at the bottom."
+        : "Not enough evidence to name a diagnosis. See suggestions below.";
+    ctx.page.drawText(safe(outcomeLine), {
+      x: MARGIN + 18,
+      y: ctx.y - 110,
+      size: 10,
+      font: ctx.fontItalic,
+      color: COLOR_INK,
     });
   });
 }
@@ -448,13 +495,15 @@ function drawDiagnosisHero(ctx: ReportContext) {
 function drawReasoning(ctx: ReportContext) {
   const r = ctx.result;
   if (r.reasoning.whySure.length > 0) {
-    drawSectionHeading(ctx, "Bukti yang menyokong", "Why I'm confident");
+    drawSectionHeading(ctx, "Why I'm confident", "Bukti yang menyokong");
     drawBulletList(ctx, r.reasoning.whySure);
   }
 
   if (r.reasoning.whatRuledOut.length > 0) {
-    drawSectionHeading(ctx, "Yang sudah disingkirkan", "What I ruled out");
-    for (const item of r.reasoning.whatRuledOut.slice(0, 6)) {
+    drawSectionHeading(ctx, "What I ruled out", "Yang sudah disingkirkan");
+    // Cap at top 5 — past that the list is too long to scan and we already
+    // print the full set in the technical reference at the back of the doc.
+    for (const item of r.reasoning.whatRuledOut.slice(0, 5)) {
       drawText(ctx, `${item.name}`, {
         size: 10,
         font: ctx.fontBold,
@@ -467,10 +516,17 @@ function drawReasoning(ctx: ReportContext) {
         bottomGap: 4,
       });
     }
+    if (r.reasoning.whatRuledOut.length > 5) {
+      drawText(
+        ctx,
+        `+ ${r.reasoning.whatRuledOut.length - 5} more (full list in technical reference)`,
+        { size: 9, italics: true, color: COLOR_MUTED, bottomGap: 4 }
+      );
+    }
   }
 
   if (r.reasoning.whatStillUncertain.length > 0) {
-    drawSectionHeading(ctx, "Yang masih tidak pasti", "Still uncertain about");
+    drawSectionHeading(ctx, "Still uncertain about", "Yang masih tidak pasti");
     drawBulletList(ctx, r.reasoning.whatStillUncertain);
   }
 }
@@ -479,30 +535,31 @@ function drawPrescription(ctx: ReportContext) {
   const p = ctx.result.prescription;
   if (!p) return;
 
-  // Stop it NOW (treatment)
-  drawSectionHeading(ctx, "Rawatan segera", "Stop it now");
+  drawSectionHeading(ctx, "Stop it now", "Rawatan segera");
 
   if (p.controlNow.chemical) {
     const c = p.controlNow.chemical;
-    drawLabelValueRow(ctx, "Bahan kimia / Chemical:", c.name);
-    if (c.brand) drawLabelValueRow(ctx, "Jenama / Brand:", c.brand);
-    drawLabelValueRow(ctx, "Dos / Dose:", c.dose);
-    drawLabelValueRow(ctx, "Kekerapan / Frequency:", c.frequency);
+    // English-only row labels — value column gets more horizontal space
+    // and the row scans cleanly
+    drawLabelValueRow(ctx, "Chemical:", c.name);
+    if (c.brand) drawLabelValueRow(ctx, "Brand:", c.brand);
+    drawLabelValueRow(ctx, "Dose:", c.dose);
+    drawLabelValueRow(ctx, "Frequency:", c.frequency);
     if (c.estCostRm !== undefined) {
-      drawLabelValueRow(ctx, "Anggaran kos / Cost:", `RM ${c.estCostRm}`);
+      drawLabelValueRow(ctx, "Estimated cost:", `RM ${c.estCostRm}`);
     }
     ctx.y -= 4;
   } else {
-    drawText(ctx, "Tiada rawatan kimia — cultural / preventive only.", {
+    drawText(ctx, "No chemical treatment — cultural / preventive steps only.", {
       size: 10,
-      font: ctx.fontItalic,
+      italics: true,
       color: COLOR_MUTED,
       bottomGap: 6,
     });
   }
 
   if (p.controlNow.cultural.length > 0) {
-    drawText(ctx, "Langkah amalan / Cultural steps:", {
+    drawText(ctx, "Cultural steps (Langkah amalan):", {
       size: 10,
       font: ctx.fontBold,
       bottomGap: 2,
@@ -510,16 +567,15 @@ function drawPrescription(ctx: ReportContext) {
     drawBulletList(ctx, p.controlNow.cultural);
   }
 
-  // Stop it COMING BACK (prevention)
   if (p.preventRecurrence.length > 0) {
-    drawSectionHeading(ctx, "Pencegahan", "Stop it coming back");
+    drawSectionHeading(ctx, "Stop it coming back", "Pencegahan");
     drawBulletList(ctx, p.preventRecurrence);
   }
 }
 
 function drawFollowUp(ctx: ReportContext) {
   if (ctx.result.outcome === "cannot_determine") return;
-  drawSectionHeading(ctx, "Pemeriksaan semula", "Follow-up");
+  drawSectionHeading(ctx, "Follow-up", "Pemeriksaan semula");
   const followUpDate = new Date();
   followUpDate.setDate(followUpDate.getDate() + 5);
   const formatted = followUpDate.toLocaleDateString("en-GB", {
@@ -529,25 +585,25 @@ function drawFollowUp(ctx: ReportContext) {
   });
   drawText(
     ctx,
-    `AgroSim akan tanya pada ${formatted}: "Tanaman dah okay?" / AgroSim will check in on ${formatted} to ask how the plant is doing.`,
+    `AgroSim will check in on ${formatted} to ask how the plant is doing (Tanaman dah okay?).`,
     { size: 10, bottomGap: 4 }
   );
 
   if (ctx.result.escalation?.suggested) {
-    drawText(ctx, "Jika masih sakit / If still sick:", {
+    drawText(ctx, "If still sick (Jika masih sakit):", {
       size: 10,
       font: ctx.fontBold,
       bottomGap: 2,
     });
     drawBulletList(ctx, [
-      "Hantar laporan ini + sampel tanaman ke pejabat MARDI tempatan / Bring this report + a plant sample to your nearest MARDI office.",
-      "Atau hubungi Pegawai Pengembangan Pertanian (Extension Officer) Jabatan Pertanian / Or contact your Department of Agriculture Extension Officer.",
+      "Bring this report + a plant sample to your nearest MARDI office.",
+      "Or contact the Department of Agriculture Extension Officer (Pegawai Pengembangan Pertanian).",
     ]);
   }
 }
 
 function drawTechnicalReference(ctx: ReportContext) {
-  drawSectionHeading(ctx, "Data teknikal", "For the MARDI officer");
+  drawSectionHeading(ctx, "Technical reference", "For the MARDI officer");
   const cands = ctx.session.candidates
     .filter((c) => !c.ruledOut)
     .sort((a, b) => b.probability - a.probability);
