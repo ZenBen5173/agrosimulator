@@ -118,7 +118,7 @@ export default function PactMarketPage() {
             <ArrowLeft size={18} className="text-stone-500" />
           </button>
           <div>
-            <h1 className="text-lg font-semibold text-stone-900">Pact</h1>
+            <h1 className="text-lg font-semibold text-stone-900">Co-op</h1>
             <p className="text-[11px] leading-none text-stone-500">
               Real prices, group buys, share what you sold.
             </p>

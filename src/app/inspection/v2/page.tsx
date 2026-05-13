@@ -1213,25 +1213,49 @@ function ExtraPhotosStep({
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
 
-  function handleFile(file: File | undefined | null) {
-    if (!file) return;
-    const id = `${file.name}-${Date.now()}`;
-    const previewUrl = URL.createObjectURL(file);
-    const kindForThis = pendingKind;
-    setUploaded((prev) => [
-      ...prev,
-      { id, previewUrl, kind: kindForThis, uploading: true },
-    ]);
-    onUpload(kindForThis, file);
-    setPendingKind(undefined); // suggestion consumed, reset
-    // Optimistically flip uploading=false after a short delay; the parent
-    // will have updated session by then. Doesn't gate the proceed button —
-    // that just needs >=1 photo in the list.
-    window.setTimeout(() => {
-      setUploaded((prev) =>
-        prev.map((u) => (u.id === id ? { ...u, uploading: false } : u))
-      );
-    }, 600);
+  /**
+   * Accept one OR many files (multi-select from gallery, drag-drop, or
+   * camera one-at-a-time). Each file becomes its own thumbnail + its own
+   * server upload. The pendingKind hint, if set, is applied to ALL files
+   * in this batch (one tag per batch, not per file — keeps the UX simple).
+   */
+  function handleFiles(files: FileList | File[] | null | undefined) {
+    if (!files) return;
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    const kindForBatch = pendingKind;
+    const newOnes: UploadedExtra[] = list.map((f) => ({
+      id: `${f.name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      previewUrl: URL.createObjectURL(f),
+      kind: kindForBatch,
+      uploading: true,
+    }));
+    setUploaded((prev) => [...prev, ...newOnes]);
+    // Fire each upload in parallel so the user can keep adding while they run
+    list.forEach((f, idx) => {
+      onUpload(kindForBatch, f);
+      const id = newOnes[idx].id;
+      window.setTimeout(() => {
+        setUploaded((prev) =>
+          prev.map((u) => (u.id === id ? { ...u, uploading: false } : u))
+        );
+      }, 600);
+    });
+    setPendingKind(undefined); // suggestion consumed
+  }
+
+  /**
+   * onChange handler shared by both inputs. CRITICAL: resets the input's
+   * value AFTER reading the files, so the next pick — even of the SAME
+   * file — fires onChange again. Without this, picking the same filename
+   * twice (or re-using the input after a remove) silently does nothing.
+   */
+  function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    handleFiles(files);
+    // Defer the reset so React has read the files before we clear the
+    // underlying DOM input value.
+    e.target.value = "";
   }
 
   function removeUpload(id: string) {
@@ -1263,21 +1287,24 @@ function ExtraPhotosStep({
         </p>
       </div>
 
-      {/* Hidden inputs */}
+      {/* Hidden inputs. Camera stays single-file (you can only take one
+          shot at a time anyway). Gallery is `multiple` so the farmer can
+          batch-select 3 close-ups in one trip to the picker. */}
       <input
         ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={(e) => handleFile(e.target.files?.[0])}
+        onChange={onInputChange}
       />
       <input
         ref={galleryInputRef}
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
-        onChange={(e) => handleFile(e.target.files?.[0])}
+        onChange={onInputChange}
       />
 
       {/* Single upload area */}

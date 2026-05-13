@@ -20,8 +20,8 @@ const LEFT_TABS = [
 ];
 
 const RIGHT_TABS = [
-  { key: "pact", label: "Pact", icon: Users, href: "/market" },
-  { key: "books", label: "Books", icon: BookOpen, href: "/inventory" },
+  { key: "pact", label: "Co-op", icon: Users, href: "/market" },
+  { key: "books", label: "Inventory", icon: BookOpen, href: "/inventory" },
 ];
 
 const ALL_TABS = [...LEFT_TABS, ...RIGHT_TABS];

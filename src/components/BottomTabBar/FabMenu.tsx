@@ -36,13 +36,13 @@ const FAB_GROUPS: { label: string; items: FabAction[] }[] = [
     ],
   },
   {
-    label: "Books",
+    label: "Inventory",
     items: [
       { key: "scan_receipt", label: "Scan Receipt", icon: Receipt, href: "/receipts", color: "bg-violet-500" },
     ],
   },
   {
-    label: "Pact",
+    label: "Co-op",
     items: [
       { key: "groupbuy", label: "Group Buys", icon: Users, href: "/market", color: "bg-amber-500" },
       { key: "prices", label: "Price Check", icon: TrendingUp, href: "/market", color: "bg-indigo-500" },
