@@ -102,14 +102,38 @@ export default function HomePage() {
   // the loading code. They're intentionally not rendered in the current 2.0 home.
   void prepList; void alerts; void setPrepList; void setAlerts;
 
-  // Start tour if ?tour=1 param present (from landing page)
+  // Start tour ONLY if (a) ?tour=1 is in the URL and (b) the user hasn't
+  // already dismissed it before. Without the localStorage guard, the tour
+  // re-fires every time the user navigates back to /home because the
+  // ?tour=1 query param stays in the URL.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("tour") === "1") {
-      const timer = setTimeout(() => setShowTour(true), 1200);
-      return () => clearTimeout(timer);
+    if (params.get("tour") !== "1") return;
+    const alreadySeen =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("agrosim:tour:home:dismissed") === "1";
+    if (alreadySeen) {
+      // Strip the now-stale param so the URL doesn't keep advertising it
+      window.history.replaceState({}, "", "/home");
+      return;
     }
+    const timer = setTimeout(() => setShowTour(true), 1200);
+    return () => clearTimeout(timer);
   }, []);
+
+  // Persist dismissal + clean the URL so the tour doesn't re-fire on
+  // every navigation back to /home. Called from the CoachMarks onComplete
+  // (both the "Skip tour" button AND the "Done" path at the last step).
+  function dismissTour() {
+    setShowTour(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("agrosim:tour:home:dismissed", "1");
+      // Strip ?tour=1 from the URL without a page reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("tour");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  }
 
   // If ?reset=1 (from "Reset to baseline + enter" on landing), wipe + reseed
   // demo data, then strip the param and reload so the page picks up the seed.
@@ -622,7 +646,7 @@ export default function HomePage() {
 
       {/* Tour overlay */}
       {showTour && (
-        <CoachMarks onComplete={() => setShowTour(false)} />
+        <CoachMarks onComplete={dismissTour} />
       )}
     </div>
   );
