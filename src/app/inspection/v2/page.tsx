@@ -68,7 +68,8 @@ type LoadingStep =
   | "finalise"
   | "layer_two_plan"
   | "extra_photo"
-  | "finalise_duo";
+  | "finalise_duo"
+  | "reference_verdict";
 
 const PATTERN_OPTIONS: {
   value: SpreadPattern;
@@ -1807,6 +1808,7 @@ const STEP_TAU_MS: Record<LoadingStep, number> = {
   layer_two_plan: 600,
   extra_photo: 6000,
   finalise_duo: 800,
+  reference_verdict: 400,
 };
 
 const STEP_LABELS: Record<LoadingStep, { at: number; text: string }[]> = {
@@ -1843,12 +1845,30 @@ const STEP_LABELS: Record<LoadingStep, { at: number; text: string }[]> = {
     { at: 0, text: "Combining the evidence…" },
     { at: 50, text: "Writing the final diagnosis…" },
   ],
+  reference_verdict: [
+    { at: 0, text: "Recording your verdict…" },
+  ],
 };
+
+/**
+ * Defensive defaults — when a NEW LoadingStep is added but somebody forgets
+ * to add it to STEP_TAU_MS / STEP_LABELS (the bug that crashed
+ * ProgressLoader before this guard was added). Keeps the loader rendering
+ * a generic spinner instead of throwing "labels is not iterable" and
+ * white-screening the whole page.
+ */
+const FALLBACK_TAU_MS = 800;
+const FALLBACK_LABELS: { at: number; text: string }[] = [
+  { at: 0, text: "Working…" },
+];
 
 function ProgressLoader({ step }: { step: LoadingStep }) {
   const [pct, setPct] = useState(0);
-  const tau = STEP_TAU_MS[step];
-  const labels = STEP_LABELS[step];
+  // Fall back gracefully if a new LoadingStep is added without updating
+  // STEP_TAU_MS / STEP_LABELS — without this guard, [...undefined].reverse()
+  // throws "labels is not iterable" and white-screens the whole page.
+  const tau = STEP_TAU_MS[step] ?? FALLBACK_TAU_MS;
+  const labels = STEP_LABELS[step] ?? FALLBACK_LABELS;
 
   useEffect(() => {
     const start = Date.now();
