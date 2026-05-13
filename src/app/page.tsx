@@ -10,7 +10,6 @@ import {
   Sparkles,
   ArrowRight,
   Loader2,
-  Wrench,
   RotateCcw,
 } from "lucide-react";
 
@@ -38,7 +37,6 @@ const FEATURES = [
 ];
 
 const DEMO_EMAIL = "demo@agrosim.app";
-const DEV_EMAIL = "dev@agrosim.app";
 
 export default function LandingPage() {
   const router = useRouter();
@@ -150,23 +148,6 @@ export default function LandingPage() {
         {resetMsg && (
           <p className="mt-2 text-[11px] text-emerald-700 text-center">{resetMsg}</p>
         )}
-
-        {/* Dev button (small, for development sign-in) */}
-        <button
-          onClick={() => handleEnter(DEV_EMAIL)}
-          disabled={entering !== null || resetting}
-          className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 text-xs font-medium text-gray-500 disabled:opacity-60 hover:bg-gray-50"
-        >
-          {entering === DEV_EMAIL ? (
-            <>
-              <Loader2 size={14} className="animate-spin" /> Entering…
-            </>
-          ) : (
-            <>
-              <Wrench size={12} /> Dev sign-in (no tour)
-            </>
-          )}
-        </button>
 
         {error && (
           <p className="mt-3 text-xs text-red-500 text-center">{error}</p>
