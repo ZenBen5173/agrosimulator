@@ -660,3 +660,103 @@ describe("applyPriorBoosts (plot history + cross-farm)", () => {
     expect(applyPriorBoosts(candidates, {})).toEqual(candidates);
   });
 });
+
+// ─── Bug 2 fix: leading-only Layer 2 ceiling lift ───────────────
+
+import { liftLeadingCorroboratedCandidate } from "@/services/diagnosis/orchestrator";
+import type { ExtraPhoto } from "@/lib/diagnosis/types";
+
+describe("liftLeadingCorroboratedCandidate (Bug 2 fix)", () => {
+  function makeExtra(kind: ExtraPhoto["kind"]): ExtraPhoto {
+    return {
+      kind,
+      base64: "x",
+      mime: "image/jpeg",
+      observations: [],
+      takenAt: new Date().toISOString(),
+    };
+  }
+
+  it("lifts only the LEADING wilt to 0.88, leaves others alone", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_verticillium_wilt", name: "V", probability: 0.5, ruledOut: false },
+      { diseaseId: "chilli_fusarium_wilt", name: "F", probability: 0.3, ruledOut: false },
+      { diseaseId: "chilli_bacterial_wilt", name: "B", probability: 0.2, ruledOut: false },
+    ];
+    const result = liftLeadingCorroboratedCandidate(candidates, [
+      makeExtra("stem_cross_section"),
+    ]);
+    const v = result.find((c) => c.diseaseId === "chilli_verticillium_wilt")!;
+    const f = result.find((c) => c.diseaseId === "chilli_fusarium_wilt")!;
+    const b = result.find((c) => c.diseaseId === "chilli_bacterial_wilt")!;
+    expect(v.probability).toBe(0.88);
+    expect(f.probability).toBe(0.3);
+    expect(b.probability).toBe(0.2);
+  });
+
+  it("lifts only the LEADING virus to 0.78 when both new-growth + fruit photos present", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_amv", name: "AMV", probability: 0.4, ruledOut: false },
+      { diseaseId: "chilli_chivmv", name: "ChiVMV", probability: 0.3, ruledOut: false },
+    ];
+    const result = liftLeadingCorroboratedCandidate(candidates, [
+      makeExtra("new_growth_close_up"),
+      makeExtra("fruit_close_up"),
+    ]);
+    expect(result.find((c) => c.diseaseId === "chilli_amv")!.probability).toBe(0.78);
+    expect(result.find((c) => c.diseaseId === "chilli_chivmv")!.probability).toBe(0.3);
+  });
+
+  it("does NOT lift virus when only ONE of the two virus-discriminator photos is present", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_amv", name: "AMV", probability: 0.4, ruledOut: false },
+    ];
+    const result = liftLeadingCorroboratedCandidate(candidates, [
+      makeExtra("new_growth_close_up"), // missing fruit photo
+    ]);
+    expect(result[0].probability).toBe(0.4);
+  });
+
+  it("does nothing when no corroborating photos present", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_verticillium_wilt", name: "V", probability: 0.5, ruledOut: false },
+    ];
+    const result = liftLeadingCorroboratedCandidate(candidates, [
+      makeExtra("leaf_underside"),
+    ]);
+    expect(result[0].probability).toBe(0.5);
+  });
+
+  it("does nothing when the would-be-lifted candidate is ruled out", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_verticillium_wilt", name: "V", probability: 0.5, ruledOut: true },
+      { diseaseId: "chilli_fusarium_wilt", name: "F", probability: 0.3, ruledOut: false },
+    ];
+    const result = liftLeadingCorroboratedCandidate(candidates, [
+      makeExtra("stem_cross_section"),
+    ]);
+    // Verticillium ruled out → Fusarium becomes the leading wilt and gets lifted
+    expect(result.find((c) => c.diseaseId === "chilli_fusarium_wilt")!.probability).toBe(0.88);
+  });
+});
+
+// ─── Bug 1 fix: priors survive the vision merge ─────────────────
+
+describe("Bug 1 fix: priorBoosts persisted on session", () => {
+  it("startDiagnosis stores priorBoosts on the session for later re-application", async () => {
+    const { startDiagnosis } = await import("@/services/diagnosis/orchestrator");
+    const session = startDiagnosis({
+      crop: "chilli",
+      priorBoosts: { chilli_anthracnose: 2.5 },
+    });
+    expect(session.priorBoosts).toEqual({ chilli_anthracnose: 2.5 });
+  });
+
+  it("startDiagnosis does NOT set priorBoosts when boost map is empty/undefined", async () => {
+    const { startDiagnosis } = await import("@/services/diagnosis/orchestrator");
+    const noBoosts = startDiagnosis({ crop: "chilli" });
+    const empty = startDiagnosis({ crop: "chilli", priorBoosts: {} });
+    expect(noBoosts.priorBoosts).toBeUndefined();
+    expect(empty.priorBoosts).toBeUndefined();
+  });
+});

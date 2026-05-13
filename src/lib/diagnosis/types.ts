@@ -210,6 +210,17 @@ export interface DiagnosisSession {
     consecutiveHotDays?: number;
   };
 
+  /**
+   * Plot-history + cross-farm prior boosts applied at session start. These
+   * are PERSISTED on the session so they can be RE-APPLIED after the
+   * vision step (which would otherwise overwrite them with raw model
+   * output). Without persistence, plot-history priors only matter for
+   * the seeded candidate ordering — not the final displayed confidence.
+   * Keys are diseaseId, values are multiplicative boost factors (≥1
+   * means more likely; 0 means dropped).
+   */
+  priorBoosts?: Record<string, number>;
+
   // ─── Layer 2 (duo-layer diagnosis) ────────────────────────────
   // Set when Layer 1 completed with confidence < 0.85 and the farmer chose
   // to add more evidence. Each extra photo lifts the ceiling on the wilt/

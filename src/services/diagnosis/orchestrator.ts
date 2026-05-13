@@ -67,6 +67,11 @@ export function startDiagnosis(input: {
     candidates,
     historyAnswers: [],
     recentWeather: input.recentWeather,
+    // Persist so we can re-apply after the photo step overwrites probabilities
+    priorBoosts:
+      input.priorBoosts && Object.keys(input.priorBoosts).length > 0
+        ? input.priorBoosts
+        : undefined,
   };
 }
 
@@ -146,7 +151,13 @@ export async function analysePhoto(
   // UI offers an override ("It IS a chilli — diagnose anyway"). We just
   // run the normal merge so a real differential is available behind the
   // warning.
-  const updated = mergeVisionOutput(session.candidates, visionOutput.candidates);
+  // Pass session.priorBoosts so plot-history / cross-farm boosts survive
+  // the vision-step overwrite (Bug 1 fix).
+  const updated = mergeVisionOutput(
+    session.candidates,
+    visionOutput.candidates,
+    session.priorBoosts
+  );
   const normalised = normaliseCandidates(updated);
   const ranked = rankCandidates(normalised);
 
@@ -171,15 +182,27 @@ function mergeVisionOutput(
     ruledOut: boolean;
     ruleOutReason: string | null;
     positiveEvidence: string[];
-  }[]
+  }[],
+  /**
+   * Optional prior-boost multipliers from session.priorBoosts. The vision
+   * model output is treated as a likelihood; we multiply by the prior to
+   * approximate a Bayesian update, then normaliseCandidates handles the
+   * sum-to-1. Without this, plot-history + cross-farm priors get thrown
+   * away by the photo step (which was Bug 1).
+   */
+  priorBoosts?: Record<string, number>
 ): DifferentialCandidate[] {
   return current.map((c) => {
     if (c.ruledOut) return c; // already ruled out by pattern filter, don't unrule
     const v = visionCandidates.find((x) => x.diseaseId === c.diseaseId);
     if (!v) return c;
+    const boost = priorBoosts?.[c.diseaseId] ?? 1;
     return {
       ...c,
-      probability: v.probability,
+      // Multiply vision-output probability by the persisted prior boost so
+      // history / outbreak signal survives the merge. Normalisation downstream
+      // will renormalise these back into a valid distribution.
+      probability: v.probability * boost,
       ruledOut: v.ruledOut,
       ruleOutReason: v.ruledOut
         ? v.ruleOutReason ?? "Photo evidence rules this out"
@@ -578,17 +601,27 @@ export async function finaliseDuoLayer(
     console.warn("Multi-image Layer 2 call failed, falling back:", err);
   }
 
-  // Merge multi-image output into session candidates if available
+  // Merge multi-image output into session candidates if available. Pass
+  // priorBoosts so plot-history / cross-farm boosts survive the overwrite.
   let mergedCandidates = session.candidates;
   if (multiImageOutput) {
     mergedCandidates = mergeVisionOutput(
       session.candidates,
-      multiImageOutput.candidates
+      multiImageOutput.candidates,
+      session.priorBoosts
     );
   }
 
-  const lifted = liftCeilingsForCorroboration(mergedCandidates, extras);
-  const ranked = rankCandidates(normaliseCandidates(lifted));
+  // Run normalisation FIRST (with the standard wilt/virus ceiling caps),
+  // THEN apply the corroboration lift to the leading in-group candidate.
+  // This is Bug 2 fix: the old order lifted ALL three wilts to 0.88, then
+  // normalisation re-divided them so each ended up at ~0.33. Now: normalise
+  // first → leading wilt is, say, 0.6 of the wilt-mass → THEN lift it to
+  // 0.88 if a stem cross-section was supplied. Other wilts stay where they
+  // are (capped at 0.7 by the standard ceiling).
+  const normalised = normaliseCandidates(mergedCandidates);
+  const lifted = liftLeadingCorroboratedCandidate(normalised, extras);
+  const ranked = rankCandidates(lifted);
   const result = assembleDiagnosis(ranked, {
     historyAnswers: session.historyAnswers.map((a) => ({
       question: a.question,
@@ -599,53 +632,73 @@ export async function finaliseDuoLayer(
 }
 
 /**
- * Lift the photo-step probability caps when corroborating extra photos
- * are present. Logic:
- *   - stem_cross_section + (any wilt in play) → wilt cap lifts toward 0.88
- *   - new_growth_close_up + fruit_close_up + (any virus) → virus cap lifts to 0.78
- *   - leaf_underside + (foliar pest) → no cap to lift (pests aren't capped),
- *     but rules out competing causes via the extra observations
+ * Post-normalisation lift for Layer 2 corroboration. Bug 2 fix.
  *
- * Implementation: scale up the in-play probabilities of the affected
- * group BEFORE normalisation reapplies its own ceiling. We do this in a
- * targeted way (not blanket) so adding a leaf-underside photo doesn't
- * inflate Verticillium confidence, etc.
+ * Old behaviour (broken): bumped ALL in-group candidates to the lifted
+ * ceiling (0.88 wilt / 0.78 virus) BEFORE normalisation, which then
+ * re-divided them back down. With 3 wilts in play, each ended up at
+ * ~0.33 instead of the leading one at 0.88.
+ *
+ * New behaviour: runs AFTER normalisation. Finds the LEADING in-group
+ * candidate (highest post-normalisation probability) and lifts ONLY that
+ * one's probability. The discriminator photo (stem cross-section, etc.)
+ * has done its job; we trust the leading candidate. Others in the group
+ * stay where normalisation put them — typically the standard wilt/virus
+ * cap of 0.70 or below.
+ *
+ * Triggers:
+ *   - stem_cross_section OR stem_in_water present → leading wilt lifted to 0.88
+ *   - new_growth_close_up AND fruit_close_up both present → leading virus lifted to 0.78
  */
-function liftCeilingsForCorroboration(
+const VASCULAR_WILT_GROUP = new Set([
+  "chilli_verticillium_wilt",
+  "chilli_fusarium_wilt",
+  "chilli_bacterial_wilt",
+]);
+const VIRAL_GROUP = new Set([
+  "chilli_chivmv",
+  "chilli_amv",
+  "chilli_cmv",
+  "chilli_tswv",
+  "chilli_pmmov",
+  "chilli_tmv",
+]);
+const WILT_LIFTED = 0.88;
+const VIRUS_LIFTED = 0.78;
+
+export function liftLeadingCorroboratedCandidate(
   candidates: DifferentialCandidate[],
   extras: ExtraPhoto[]
 ): DifferentialCandidate[] {
   const kinds = new Set(extras.map((e) => e.kind));
-  const hasStemCut = kinds.has("stem_cross_section") || kinds.has("stem_in_water");
+  const hasStemCut =
+    kinds.has("stem_cross_section") || kinds.has("stem_in_water");
   const hasVirusCorroboration =
     kinds.has("new_growth_close_up") && kinds.has("fruit_close_up");
 
-  const VASCULAR_WILT = new Set([
-    "chilli_verticillium_wilt",
-    "chilli_fusarium_wilt",
-    "chilli_bacterial_wilt",
-  ]);
-  const VIRAL = new Set([
-    "chilli_chivmv",
-    "chilli_amv",
-    "chilli_cmv",
-    "chilli_tswv",
-    "chilli_pmmov",
-    "chilli_tmv",
-  ]);
+  if (!hasStemCut && !hasVirusCorroboration) return candidates;
 
-  // Lift target — what the multi-photo cap should be (vs the single-photo
-  // cap baked into normaliseCandidates). The wilt list and virus list both
-  // get ~0.85 headroom which is well above the "confirmed" 0.85 threshold.
-  const WILT_LIFTED = 0.88;
-  const VIRUS_LIFTED = 0.78;
+  const inPlay = candidates.filter((c) => !c.ruledOut);
+
+  // Pick leading wilt (if stem-cut supplied) and leading virus (if virus
+  // corroboration supplied).
+  const leadingWilt = hasStemCut
+    ? inPlay
+        .filter((c) => VASCULAR_WILT_GROUP.has(c.diseaseId))
+        .sort((a, b) => b.probability - a.probability)[0]
+    : undefined;
+  const leadingVirus = hasVirusCorroboration
+    ? inPlay
+        .filter((c) => VIRAL_GROUP.has(c.diseaseId))
+        .sort((a, b) => b.probability - a.probability)[0]
+    : undefined;
 
   return candidates.map((c) => {
     if (c.ruledOut) return c;
-    if (hasStemCut && VASCULAR_WILT.has(c.diseaseId)) {
+    if (leadingWilt && c.diseaseId === leadingWilt.diseaseId) {
       return { ...c, probability: Math.max(c.probability, WILT_LIFTED) };
     }
-    if (hasVirusCorroboration && VIRAL.has(c.diseaseId)) {
+    if (leadingVirus && c.diseaseId === leadingVirus.diseaseId) {
       return { ...c, probability: Math.max(c.probability, VIRUS_LIFTED) };
     }
     return c;
