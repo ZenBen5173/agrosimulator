@@ -132,9 +132,9 @@ export default function InventoryPage() {
               <ArrowLeft size={18} className="text-stone-500" />
             </button>
             <div>
-              <h1 className="text-lg font-semibold text-stone-900">Books</h1>
+              <h1 className="text-lg font-semibold text-stone-900">Inventory</h1>
               <p className="text-[11px] text-stone-500 leading-none">
-                Inventory + season ledger
+                Stock levels + season ledger
               </p>
             </div>
           </div>
