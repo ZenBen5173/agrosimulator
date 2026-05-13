@@ -33,6 +33,12 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+# .env.production is needed by the Cloud Build trigger (the auto-deploy
+# from GitHub) at build time. Only contains NEXT_PUBLIC_* values (which
+# are already exposed in the client bundle) and the DEMO_MODE flag. Real
+# secrets (Supabase service-role key, Gemini API key, etc.) live in
+# .env.local for dev and Cloud Run runtime env config for prod — NOT here.
+!.env.production
 
 # synced from Notion — do not edit manually
 CLAUDE.md
