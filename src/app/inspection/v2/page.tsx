@@ -1583,21 +1583,10 @@ function ResultStep({
         />
       )}
 
-      {result.reasoning.whatRuledOut.length > 0 && (
-        <div className="rounded-xl border border-stone-200 bg-white p-4">
-          <h3 className="font-medium">What I ruled out</h3>
-          <ul className="mt-2 space-y-2 text-sm">
-            {result.reasoning.whatRuledOut.map((item, i) => (
-              <li key={i}>
-                <div className="font-medium line-through text-stone-500">
-                  {item.name}
-                </div>
-                <div className="text-xs text-stone-600">{item.because}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* "What I ruled out" used to render here as a standalone card, but
+          the DifferentialLadder above already has an expandable "N ruled
+          out" details element with the same data — keeping both was
+          duplicate UI. Use the ladder's expandable, not this. */}
 
       {result.reasoning.whatStillUncertain.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
