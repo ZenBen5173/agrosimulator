@@ -169,7 +169,7 @@ function drawText(
   const maxW = opts.maxWidth ?? CONTENT_W - (opts.indent ?? 0);
 
   const lines = wrapText(text, fnt, size, maxW);
-  const lineHeight = size * 1.35;
+  const lineHeight = size * 1.5; // was 1.35 — more breathing room between lines
   newPageIfNeeded(ctx, lines.length * lineHeight + (opts.bottomGap ?? 0));
 
   for (const line of lines) {
@@ -198,8 +198,9 @@ function drawDivider(ctx: ReportContext, color = COLOR_LINE, gap = 6) {
 }
 
 function drawSectionHeading(ctx: ReportContext, en: string, bm?: string) {
-  newPageIfNeeded(ctx, 28);
-  ctx.y -= 18;
+  newPageIfNeeded(ctx, 44);
+  ctx.y -= 32; // was 18 — much bigger gap before each section heading so
+  // adjacent sections aren't visually mashed together
   // English first (primary, larger), optional BM in parens (smaller, muted).
   // Heavy bilingual headers (TANAMAN · Crop & plot) doubled the visual
   // weight of every section — most farmers + judges scan the English
@@ -207,12 +208,12 @@ function drawSectionHeading(ctx: ReportContext, en: string, bm?: string) {
   ctx.page.drawText(safe(en), {
     x: MARGIN,
     y: ctx.y,
-    size: 11,
+    size: 12,
     font: ctx.fontBold,
     color: COLOR_INK,
   });
   if (bm) {
-    const enW = ctx.fontBold.widthOfTextAtSize(safe(en), 11);
+    const enW = ctx.fontBold.widthOfTextAtSize(safe(en), 12);
     ctx.page.drawText(safe(`  (${bm})`), {
       x: MARGIN + enW,
       y: ctx.y,
@@ -221,19 +222,19 @@ function drawSectionHeading(ctx: ReportContext, en: string, bm?: string) {
       color: COLOR_MUTED,
     });
   }
-  ctx.y -= 6;
+  ctx.y -= 8;
   ctx.page.drawLine({
     start: { x: MARGIN, y: ctx.y },
     end: { x: PAGE_W - MARGIN, y: ctx.y },
     thickness: 0.6,
     color: COLOR_LINE,
   });
-  ctx.y -= 10;
+  ctx.y -= 14; // was 10 — more space between rule and the first body line
 }
 
 function drawLabelValueRow(ctx: ReportContext, label: string, value: string) {
   const size = 10;
-  newPageIfNeeded(ctx, size * 1.4);
+  newPageIfNeeded(ctx, size * 1.9);
   ctx.page.drawText(safe(label), {
     x: MARGIN,
     y: ctx.y - size,
@@ -248,7 +249,7 @@ function drawLabelValueRow(ctx: ReportContext, label: string, value: string) {
     font: ctx.font,
     color: COLOR_INK,
   });
-  ctx.y -= size * 1.6;
+  ctx.y -= size * 1.9; // was 1.6 — more breathing room between rows
 }
 
 function drawColouredCard(
@@ -258,7 +259,7 @@ function drawColouredCard(
   border: RGB,
   draw: (cardTop: number, cardBottom: number) => void
 ) {
-  newPageIfNeeded(ctx, height + 12);
+  newPageIfNeeded(ctx, height + 24);
   const top = ctx.y;
   const bottom = ctx.y - height;
   ctx.page.drawRectangle({
@@ -271,12 +272,13 @@ function drawColouredCard(
     borderWidth: 1,
   });
   draw(top, bottom);
-  ctx.y = bottom - 10;
+  ctx.y = bottom - 24; // was 10 — much bigger gap after the diagnosis
+  // hero so the next section doesn't crowd it
 }
 
-function drawBulletList(ctx: ReportContext, items: string[], indent = 14) {
+function drawBulletList(ctx: ReportContext, items: string[], indent = 16) {
   for (const item of items) {
-    newPageIfNeeded(ctx, 14);
+    newPageIfNeeded(ctx, 18);
     ctx.page.drawText("•", {
       x: MARGIN + 4,
       y: ctx.y - 11,
@@ -288,7 +290,7 @@ function drawBulletList(ctx: ReportContext, items: string[], indent = 14) {
       size: 10,
       indent,
       maxWidth: CONTENT_W - indent,
-      bottomGap: 2,
+      bottomGap: 6, // was 2 — gap between bullet items
     });
   }
 }
@@ -425,30 +427,33 @@ function drawDiagnosisHero(ctx: ReportContext) {
       ? "Tidak pasti"
       : "Tidak boleh tentukan";
 
-  drawColouredCard(ctx, 130, bg, border, () => {
-    // STATUS pill — top of card, small caps, coloured
+  // Card 160pt tall (was 130) so we have 20pt+ breathing room around
+  // every text element inside. Padding 24pt on the inside instead of 18pt.
+  drawColouredCard(ctx, 160, bg, border, () => {
+    const PAD = 24;
+    // STATUS pill — top, with breathing room from the card edge
     ctx.page.drawText(safe(`${statusEn}  ·  ${statusBm}`), {
-      x: MARGIN + 18,
-      y: ctx.y - 22,
+      x: MARGIN + PAD,
+      y: ctx.y - 28,
       size: 10,
       font: ctx.fontBold,
       color: border,
     });
 
-    // DIAGNOSIS NAME — huge, dominates the card
+    // DIAGNOSIS NAME — huge, dominates the card. 28pt below status pill.
     ctx.page.drawText(safe(name), {
-      x: MARGIN + 18,
-      y: ctx.y - 56,
+      x: MARGIN + PAD,
+      y: ctx.y - 70,
       size: 26,
       font: ctx.fontBold,
       color: COLOR_INK,
     });
 
-    // SCIENTIFIC NAME — italic, muted, under the name
+    // SCIENTIFIC NAME — italic, muted, generous gap below the name
     if (sci) {
       ctx.page.drawText(safe(sci), {
-        x: MARGIN + 18,
-        y: ctx.y - 78,
+        x: MARGIN + PAD,
+        y: ctx.y - 96,
         size: 11,
         font: ctx.fontItalic,
         color: COLOR_MUTED,
@@ -459,8 +464,8 @@ function drawDiagnosisHero(ctx: ReportContext) {
     const confText = `${conf}%`;
     const confW = ctx.fontBold.widthOfTextAtSize(confText, 36);
     ctx.page.drawText(confText, {
-      x: PAGE_W - MARGIN - 18 - confW,
-      y: ctx.y - 56,
+      x: PAGE_W - MARGIN - PAD - confW,
+      y: ctx.y - 70,
       size: 36,
       font: ctx.fontBold,
       color: border,
@@ -468,14 +473,14 @@ function drawDiagnosisHero(ctx: ReportContext) {
     const confLbl = "confidence";
     const confLblW = ctx.font.widthOfTextAtSize(confLbl, 9);
     ctx.page.drawText(confLbl, {
-      x: PAGE_W - MARGIN - 18 - confLblW,
-      y: ctx.y - 72,
+      x: PAGE_W - MARGIN - PAD - confLblW,
+      y: ctx.y - 86,
       size: 9,
       font: ctx.font,
       color: COLOR_MUTED,
     });
 
-    // Bottom hairline + plain-language outcome statement
+    // Plain-language outcome statement at the bottom of the card
     const outcomeLine =
       outcome === "confirmed"
         ? "We're confident — proceed with the treatment below."
@@ -483,8 +488,8 @@ function drawDiagnosisHero(ctx: ReportContext) {
         ? "Best assessment — consider the second-opinion options at the bottom."
         : "Not enough evidence to name a diagnosis. See suggestions below.";
     ctx.page.drawText(safe(outcomeLine), {
-      x: MARGIN + 18,
-      y: ctx.y - 110,
+      x: MARGIN + PAD,
+      y: ctx.y - 138,
       size: 10,
       font: ctx.fontItalic,
       color: COLOR_INK,
