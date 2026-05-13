@@ -252,6 +252,106 @@ function drawLabelValueRow(ctx: ReportContext, label: string, value: string) {
   ctx.y -= size * 1.9; // was 1.6 — more breathing room between rows
 }
 
+/**
+ * Bordered key/value table — used for the prescription block so the
+ * chemical/dose/frequency rows read as a proper printed prescription
+ * sheet, not loose label-value pairs floating in the margin. Each value
+ * is wrapped to fit the value column width so long brand strings don't
+ * overflow the page.
+ *
+ * Layout:
+ *   ┌──────────────┬──────────────────────────────┐
+ *   │ Label (bold) │ Value                        │
+ *   ├──────────────┼──────────────────────────────┤
+ *   │ Label (bold) │ Value (multi-line wraps OK)  │
+ *   └──────────────┴──────────────────────────────┘
+ */
+function drawKeyValueTable(
+  ctx: ReportContext,
+  rows: { label: string; value: string }[]
+) {
+  if (rows.length === 0) return;
+  const labelColW = 130;
+  const valueColW = CONTENT_W - labelColW;
+  const padX = 10;
+  const padY = 8;
+  const fontSize = 10;
+  const lineHeight = fontSize * 1.4;
+  const cellMinH = lineHeight + padY * 2;
+
+  // Pre-compute each row's height (longest column wins)
+  const rowMeta = rows.map((r) => {
+    const labelLines = wrapText(r.label, ctx.fontBold, fontSize, labelColW - padX * 2);
+    const valueLines = wrapText(r.value, ctx.font, fontSize, valueColW - padX * 2);
+    const lines = Math.max(labelLines.length, valueLines.length);
+    const h = Math.max(cellMinH, lines * lineHeight + padY * 2);
+    return { labelLines, valueLines, h };
+  });
+  const totalH = rowMeta.reduce((acc, r) => acc + r.h, 0);
+
+  newPageIfNeeded(ctx, totalH + 8);
+
+  const top = ctx.y;
+  const bottom = top - totalH;
+
+  // Outer border + vertical column divider
+  ctx.page.drawRectangle({
+    x: MARGIN,
+    y: bottom,
+    width: CONTENT_W,
+    height: totalH,
+    borderColor: COLOR_LINE,
+    borderWidth: 0.8,
+  });
+  ctx.page.drawLine({
+    start: { x: MARGIN + labelColW, y: top },
+    end: { x: MARGIN + labelColW, y: bottom },
+    thickness: 0.6,
+    color: COLOR_LINE,
+  });
+
+  // Row contents + inter-row separators
+  let y = top;
+  for (let i = 0; i < rowMeta.length; i++) {
+    const { labelLines, valueLines, h } = rowMeta[i];
+    // Label cell
+    let labelY = y - padY - fontSize;
+    for (const line of labelLines) {
+      ctx.page.drawText(safe(line), {
+        x: MARGIN + padX,
+        y: labelY,
+        size: fontSize,
+        font: ctx.fontBold,
+        color: COLOR_MUTED,
+      });
+      labelY -= lineHeight;
+    }
+    // Value cell
+    let valueY = y - padY - fontSize;
+    for (const line of valueLines) {
+      ctx.page.drawText(safe(line), {
+        x: MARGIN + labelColW + padX,
+        y: valueY,
+        size: fontSize,
+        font: ctx.font,
+        color: COLOR_INK,
+      });
+      valueY -= lineHeight;
+    }
+    y -= h;
+    // Horizontal divider (except after the last row)
+    if (i < rowMeta.length - 1) {
+      ctx.page.drawLine({
+        start: { x: MARGIN, y },
+        end: { x: MARGIN + CONTENT_W, y },
+        thickness: 0.4,
+        color: COLOR_LINE,
+      });
+    }
+  }
+  ctx.y = bottom - 14; // gap below the table
+}
+
 function drawColouredCard(
   ctx: ReportContext,
   height: number,
@@ -544,16 +644,18 @@ function drawPrescription(ctx: ReportContext) {
 
   if (p.controlNow.chemical) {
     const c = p.controlNow.chemical;
-    // English-only row labels — value column gets more horizontal space
-    // and the row scans cleanly
-    drawLabelValueRow(ctx, "Chemical:", c.name);
-    if (c.brand) drawLabelValueRow(ctx, "Brand:", c.brand);
-    drawLabelValueRow(ctx, "Dose:", c.dose);
-    drawLabelValueRow(ctx, "Frequency:", c.frequency);
+    // Bordered prescription table — reads like a proper printed
+    // pharmacy slip. Each row is a label/value cell pair.
+    const rxRows: { label: string; value: string }[] = [
+      { label: "Chemical:", value: c.name },
+    ];
+    if (c.brand) rxRows.push({ label: "Brand:", value: c.brand });
+    rxRows.push({ label: "Dose:", value: c.dose });
+    rxRows.push({ label: "Frequency:", value: c.frequency });
     if (c.estCostRm !== undefined) {
-      drawLabelValueRow(ctx, "Estimated cost:", `RM ${c.estCostRm}`);
+      rxRows.push({ label: "Estimated cost:", value: `RM ${c.estCostRm}` });
     }
-    ctx.y -= 4;
+    drawKeyValueTable(ctx, rxRows);
   } else {
     drawText(ctx, "No chemical treatment — cultural / preventive steps only.", {
       size: 10,
