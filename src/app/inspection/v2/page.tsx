@@ -515,7 +515,7 @@ function CropPicker({
   onContinue: () => void;
 }) {
   const supportedCrops: { value: CropName; label: string }[] = [
-    { value: "chilli", label: "Chilli (cili)" },
+    { value: "chilli", label: "Pepper / Chilli (lada / cili)" },
     { value: "paddy", label: "Paddy (padi)" },
   ];
   return (

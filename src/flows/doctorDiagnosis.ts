@@ -80,7 +80,9 @@ ABSOLUTE RULES:
    - Maximum 0.92 from a photo alone, even if the visual match is perfect.
    - Maximum 0.65 if photoQuality is "acceptable", 0.40 if "poor", 0.20 if "unusable".
    - Probabilities of in-play candidates do NOT need to sum to 1 — being uncertain across multiple is GOOD.
-4. CONSIDER ABIOTIC CAUSES ALWAYS. Wilting, yellowing, and stunted growth have non-disease causes (water stress, waterlogging, heat, nutrient lock-up, herbicide drift). If any abiotic candidate is in the list, weigh it seriously — DO NOT default to a biotic disease just because diseases dominate the list. The single most common cause of wilting in Malaysian smallholder chilli is under-watering, not bacterial wilt.
+4. CONSIDER ABIOTIC CAUSES ALWAYS. Wilting, yellowing, and stunted growth have non-disease causes (water stress, waterlogging, heat, nutrient lock-up, herbicide drift). If any abiotic candidate is in the list, weigh it seriously — DO NOT default to a biotic disease just because diseases dominate the list. The single most common cause of wilting in Malaysian smallholder pepper / chilli (Capsicum spp.) is under-watering, not bacterial wilt.
+
+  NOTE ON CROP NAMING: When the farmer's chosen crop is "chilli" / "cili" / "lada" / "pepper", they all refer to the same plant family (Capsicum). The disease rules apply equally to bell pepper, hot chilli, cili padi, etc. Don't flag cropMismatch just because the photo looks like a sweet bell pepper instead of a hot chilli — they're the same species.
 5a. VASCULAR WILTS LOOK NEARLY IDENTICAL FROM A LEAF PHOTO. Verticillium wilt, Fusarium wilt, and bacterial wilt all cause leaf wilting + browning + plant decline. Real plant pathologists separate them with a STEM-CUT TEST (vascular colour + bacterial-ooze test), not by leaves alone. Therefore:
    - When you see ANY wilt + leaf yellowing/browning pattern, mark Verticillium wilt, Fusarium wilt, AND bacterial wilt as in-play (NOT ruled out) with similar mid-range probabilities (0.25-0.45 each). Do NOT pick one with high confidence from leaf evidence alone.
    - ONLY rule out a wilt candidate if a non-wilt feature contradicts it (e.g. plant is upright with fresh fruit lesions → not a vascular wilt; bottom-up old-leaf yellowing → less likely bacterial wilt which kills fast).
@@ -125,6 +127,19 @@ You diagnose the way a Malaysian extension officer would: by ruling things out w
 
 // ─── Helper: build the grounded prompt ─────────────────────────
 
+/**
+ * Friendly, broader display name for the model. Internally we still use
+ * "chilli" as the CropName (would be a sweeping rename otherwise), but
+ * for the model + farmer-facing prompt we say "pepper / chilli" so it's
+ * clear the rules cover all Capsicum (bell pepper, hot chilli, cili padi,
+ * lada). This avoids the model false-flagging cropMismatch on a sweet
+ * bell-pepper photo when the user picked "chilli".
+ */
+function cropDisplayName(crop: CropName): string {
+  if (crop === "chilli") return "pepper / chilli (Capsicum)";
+  return crop;
+}
+
 function buildVisionPrompt(
   crop: CropName,
   candidateIds: string[]
@@ -146,13 +161,14 @@ ${ruleOuts}`;
     })
     .join("\n\n");
 
-  return `The farmer told us they're inspecting their ${crop.toUpperCase()} crop. The photo SHOULD show a ${crop} plant from a Malaysian smallholder farm.
+  const displayCrop = cropDisplayName(crop);
+  return `The farmer told us they're inspecting their ${displayCrop.toUpperCase()} crop. The photo SHOULD show a ${displayCrop} plant from a Malaysian smallholder farm.
 
 STEP 0 — CROP MISMATCH CHECK (BE CONSERVATIVE).
-Default assumption: the farmer knows their crop. The photo SHOULD show ${crop}. Only flag mismatch when overwhelming evidence says otherwise.
-- If the plant could plausibly be ${crop} (any growth stage, any disease state, even if you're unsure) → set cropMismatch.detected = false and continue.
-- ONLY set cropMismatch.detected = true when the photo shows something OBVIOUSLY non-${crop}: a tree, a grass / monocot, a totally different ripe fruit, a non-plant object, a clearly different crop the farmer would never confuse. In that case fill in actualPlant + note, but STILL provide candidate probabilities (the farmer may override if they're certain).
-- Diseased ${crop} plants can look unfamiliar — wilting, browning, leaf curling, defoliation all change appearance. Do NOT mistake disease symptoms for "wrong species".
+Default assumption: the farmer knows their crop. The photo SHOULD show ${displayCrop}. Only flag mismatch when overwhelming evidence says otherwise.
+- If the plant could plausibly be ${displayCrop} (any growth stage, any disease state, any cultivar — bell pepper, hot chilli, cili padi all count as the same crop) → set cropMismatch.detected = false and continue.
+- ONLY set cropMismatch.detected = true when the photo shows something OBVIOUSLY non-${displayCrop}: a tree, a grass / monocot, a totally different ripe fruit, a non-plant object, a clearly different crop the farmer would never confuse. In that case fill in actualPlant + note, but STILL provide candidate probabilities (the farmer may override if they're certain).
+- Diseased ${displayCrop} plants can look unfamiliar — wilting, browning, leaf curling, defoliation all change appearance. Do NOT mistake disease symptoms for "wrong species".
 
 CANDIDATE DISEASES TO CONSIDER (and ONLY these — only relevant if STEP 0 passed):
 ${candidateBlocks}

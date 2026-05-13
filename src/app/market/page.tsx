@@ -31,7 +31,7 @@ import type {
 import { createClient } from "@/lib/supabase/client";
 
 const CROPS: { value: CropName; label: string }[] = [
-  { value: "chilli", label: "Chilli (cili)" },
+  { value: "chilli", label: "Pepper / Chilli (lada / cili)" },
   { value: "paddy", label: "Paddy (padi)" },
   { value: "kangkung", label: "Kangkung" },
   { value: "banana", label: "Banana (pisang)" },

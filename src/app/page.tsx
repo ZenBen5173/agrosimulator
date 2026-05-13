@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: TrendingUp,
     title: "Anonymous price benchmark",
-    desc: "Other chilli farmers in your district got RM 4.20 this week. You sold at RM 3.80. Now you know.",
+    desc: "Other pepper / chilli farmers in your district got RM 4.20 this week. You sold at RM 3.80. Now you know.",
   },
   {
     icon: Users,
