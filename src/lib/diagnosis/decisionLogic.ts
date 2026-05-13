@@ -13,6 +13,7 @@ import type { MalaysiaDiseaseRule } from "./malaysiaRules";
 import type {
   CropName,
   DiagnosisResult,
+  DiagnosisSession,
   DifferentialCandidate,
   ExtraPhotoRequest,
   HistoryQuestion,
@@ -514,16 +515,78 @@ export function selectHistoryQuestions(
       ],
       discriminates: ["chilli_water_stress", "chilli_waterlogging"],
     },
+    {
+      // Plant stage rules out diseases that only affect specific stages
+      // (damping-off is seedling-only; blossom end rot needs fruit; etc.)
+      id: "plant_stage",
+      text: "What stage is the plant at?",
+      options: [
+        { value: "seedling", label: "Seedling (≤4 weeks, no flowers)" },
+        { value: "vegetative", label: "Growing (>4 weeks, no flowers yet)" },
+        { value: "flowering", label: "Flowering" },
+        { value: "fruiting", label: "Fruiting / harvesting" },
+      ],
+      discriminates: [
+        "chilli_damping_off",
+        "chilli_calcium_def_blossom_end_rot",
+        "chilli_anthracnose",
+        "chilli_fruit_borer",
+      ],
+    },
+    {
+      // Variety hint — some Malaysian cultivars carry resistance genes
+      // that materially shift priors (MC11/MC12 = ChiVMV-tolerant; Kulai
+      // = anthracnose-susceptible).
+      id: "variety",
+      text: "Which chilli variety is this?",
+      options: [
+        { value: "mc11_mc12", label: "MC11 / MC12 (MARDI)" },
+        { value: "kulai", label: "Kulai" },
+        { value: "padi", label: "Cili Padi" },
+        { value: "bara", label: "Bara / hot variety" },
+        { value: "unknown", label: "Don't know / mixed" },
+      ],
+      discriminates: ["chilli_chivmv", "chilli_anthracnose", "chilli_pmmov"],
+    },
+    {
+      // Last fungicide / pesticide narrows down what's been tried — if
+      // farmer already sprayed copper a week ago and still has the
+      // problem, copper-treatable diseases (bacterial leaf spot,
+      // Phytophthora) become less likely.
+      id: "last_treatment",
+      text: "Have you sprayed any treatment in the last 14 days?",
+      options: [
+        { value: "copper", label: "Copper-based (Kocide etc.)" },
+        { value: "mancozeb", label: "Mancozeb (Dithane)" },
+        { value: "systemic_fungicide", label: "Systemic fungicide" },
+        { value: "insecticide", label: "Insecticide only" },
+        { value: "none", label: "Nothing sprayed" },
+      ],
+      discriminates: [
+        "chilli_bacterial_leaf_spot",
+        "chilli_phytophthora_blight",
+        "chilli_anthracnose",
+        "chilli_cercospora",
+      ],
+    },
   ];
 
-  // Score each question by how many in-play candidates it discriminates
+  // Score each question by how many in-play candidates it discriminates,
+  // then boost universally-useful questions so they're not edged out by
+  // a long-tail category-specific question. plant_stage gets the biggest
+  // boost because it can rule out entire candidate groups
+  // (damping-off=seedlings only, blossom-end-rot=fruiting only).
+  const UNIVERSAL_BOOST: Record<string, number> = {
+    onset: 2,
+    plant_stage: 2,
+    weather: 1.5,
+  };
   const scored = all
     .map((q) => ({
       q,
       score: q.discriminates.filter((id) => inPlayIds.has(id)).length,
     }))
-    // Always include onset + weather as universal
-    .map((s) => ({ ...s, score: ["onset", "weather"].includes(s.q.id) ? s.score + 1 : s.score }))
+    .map((s) => ({ ...s, score: s.score + (UNIVERSAL_BOOST[s.q.id] ?? 0) }))
     .sort((a, b) => b.score - a.score);
 
   return scored.slice(0, max).map((s) => s.q);
@@ -717,6 +780,26 @@ const ANSWER_KEYWORDS: Record<string, Record<string, string[]>> = {
     longer: ["week", "many days", "long time", "lama", "haven't watered"],
     rain_only: ["rain only", "no irrigation", "rely on rain", "natural rain", "hujan saja"],
   },
+  plant_stage: {
+    seedling: ["seedling", "young", "anak benih", "baru tanam", "sprouted", "small plant"],
+    vegetative: ["vegetative", "growing", "no flower", "leafy"],
+    flowering: ["flower", "bunga", "blossom"],
+    fruiting: ["fruit", "fruiting", "buah", "harvesting", "ripening"],
+  },
+  variety: {
+    mc11_mc12: ["mc11", "mc12", "mc 11", "mc 12", "mardi"],
+    kulai: ["kulai"],
+    padi: ["cili padi", "padi", "bird's eye", "bird eye"],
+    bara: ["bara", "hot variety", "hot chilli"],
+    unknown: ["don't know", "tidak tahu", "mixed", "campur"],
+  },
+  last_treatment: {
+    copper: ["copper", "kocide", "tembaga", "cu"],
+    mancozeb: ["mancozeb", "dithane", "dithan"],
+    systemic_fungicide: ["systemic", "antracol", "ridomil", "bravo"],
+    insecticide: ["insecticide", "racun serangga", "imidacloprid", "spinosad"],
+    none: ["nothing", "none", "tidak", "haven't sprayed", "no spray"],
+  },
 };
 
 /**
@@ -861,4 +944,99 @@ function severityFromConfidence(confidence: number): "mild" | "moderate" | "seve
   // Genkit flow. For now we use confidence as a coarse proxy + default mid.
   if (confidence > 0.95) return "severe";
   return "moderate";
+}
+
+// ─── MARDI / DOA expert case package (#9) ───────────────────────
+
+/**
+ * Build a complete plain-text case package suitable for sending to a
+ * MARDI extension officer (or any third-party plant pathologist) when
+ * the AI is uncertain. Includes:
+ *   - Crop, plot, date
+ *   - Pattern + history answers
+ *   - Photo quality + observations
+ *   - Full differential with rule-out reasoning
+ *   - AI's leading diagnosis + confidence
+ *   - Suggested next test
+ *
+ * The output is BM/English mixed and conversational so a real officer
+ * can read it without preamble. Designed to copy-paste into Telegram /
+ * SMS / email — no app integration required on their side.
+ *
+ * NOTE: photo files are referenced by count, not embedded. The web app
+ * UI shows a follow-up dialog asking the farmer to attach the photos
+ * separately (their gallery → recipient).
+ */
+export function buildExpertCasePackage(session: DiagnosisSession): string {
+  const result = session.result;
+  const date = new Date(session.startedAt);
+  const dateStr = date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+  const lines: string[] = [];
+  lines.push("Salam tuan,");
+  lines.push("");
+  lines.push("Saya minta tolong second opinion untuk satu kes diagnosis tanaman yang AgroSim tak yakin sangat.");
+  lines.push("");
+  lines.push(`📋 KES`);
+  lines.push(`  Tarikh: ${dateStr}`);
+  lines.push(`  Tanaman: ${session.crop}${session.plotLabel ? ` (${session.plotLabel})` : ""}`);
+  lines.push(`  Pattern: ${session.pattern ?? "—"}`);
+  lines.push("");
+
+  if (session.historyAnswers.length > 0) {
+    lines.push("📝 SEJARAH (jawapan farmer):");
+    for (const ha of session.historyAnswers) {
+      lines.push(`  Q: ${ha.question}`);
+      lines.push(`  A: ${ha.answer}`);
+    }
+    lines.push("");
+  }
+
+  if (session.physicalTest) {
+    lines.push(`🔬 UJIAN FIZIKAL:`);
+    lines.push(`  ${session.physicalTest.test}: ${session.physicalTest.result}`);
+    lines.push("");
+  }
+
+  const photoCount = 1 + (session.extraPhotos?.length ?? 0);
+  lines.push(`📷 GAMBAR: ${photoCount} keping (akan dihantar berasingan)`);
+  lines.push("");
+
+  if (result) {
+    lines.push("🤖 ANALISA AGROSIM:");
+    if (result.diagnosis) {
+      lines.push(`  Diagnosis utama: ${result.diagnosis.name} (${result.diagnosis.scientificName ?? "—"})`);
+      lines.push(`  Keyakinan: ${Math.round(result.confidence * 100)}%`);
+      lines.push(`  Outcome: ${result.outcome}`);
+    } else {
+      lines.push(`  Tidak boleh tentukan — ${result.outcome}`);
+    }
+    lines.push("");
+
+    if (result.reasoning.whatRuledOut.length > 0) {
+      lines.push("  Sudah disingkirkan:");
+      for (const r of result.reasoning.whatRuledOut.slice(0, 5)) {
+        lines.push(`    • ${r.name}: ${r.because}`);
+      }
+      lines.push("");
+    }
+
+    if (result.reasoning.whatStillUncertain.length > 0) {
+      lines.push("  Masih tidak pasti:");
+      for (const u of result.reasoning.whatStillUncertain) {
+        lines.push(`    • ${u}`);
+      }
+      lines.push("");
+    }
+  }
+
+  lines.push("Boleh tuan tolong sahkan? Saya boleh hantar gambar via WhatsApp / Telegram. Terima kasih banyak.");
+  lines.push("");
+  lines.push("(Kes ini dijana oleh AgroSim untuk farmer Malaysia.)");
+
+  return lines.join("\n");
 }

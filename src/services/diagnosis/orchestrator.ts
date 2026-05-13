@@ -25,7 +25,7 @@ import {
   selectPhysicalTest,
   type WeatherSummary,
 } from "@/lib/diagnosis/decisionLogic";
-import { visionDifferentialFlow } from "@/flows/doctorDiagnosis";
+import { duoLayerVisionFlow, visionDifferentialFlow } from "@/flows/doctorDiagnosis";
 import type {
   CropName,
   DiagnosisResult,
@@ -46,17 +46,43 @@ export function startDiagnosis(input: {
   plotId?: string;
   plotLabel?: string;
   recentWeather?: WeatherSummary;
+  /**
+   * Per-disease prior boost multipliers (from plot history + cross-farm
+   * outbreak signal). Applied to the seeded uniform priors before
+   * normalisation, so diseases the plot has had before / that are
+   * sweeping the district get a head start in the differential.
+   */
+  priorBoosts?: Record<string, number>;
 }): DiagnosisSession {
+  let candidates = seedCandidatesForCrop(input.crop);
+  if (input.priorBoosts && Object.keys(input.priorBoosts).length > 0) {
+    candidates = applyPriorBoosts(candidates, input.priorBoosts);
+  }
   return {
     sessionId: randomUUID(),
     crop: input.crop,
     plotId: input.plotId,
     plotLabel: input.plotLabel,
     startedAt: new Date().toISOString(),
-    candidates: seedCandidatesForCrop(input.crop),
+    candidates,
     historyAnswers: [],
     recentWeather: input.recentWeather,
   };
+}
+
+/**
+ * Multiply each candidate's seeded probability by its boost (default 1.0).
+ * This is the entry point for plot-history + cross-farm-outbreak priors.
+ * Pure function so it can be unit-tested.
+ */
+export function applyPriorBoosts(
+  candidates: DifferentialCandidate[],
+  boosts: Record<string, number>
+): DifferentialCandidate[] {
+  return candidates.map((c) => ({
+    ...c,
+    probability: c.probability * (boosts[c.diseaseId] ?? 1),
+  }));
 }
 
 // ─── Step 2: pattern question ───────────────────────────────────
@@ -223,6 +249,84 @@ export function applyHistoryAnswer(
     });
   }
 
+  // Plant-stage rules out diseases that only happen at specific stages.
+  // Damping-off is seedling-only; blossom end rot + fruit borer + anthracnose
+  // need fruit; etc. This is a major accuracy lever — without it, the model
+  // routinely lists "blossom end rot" as a candidate on a seedling.
+  if (questionId === "plant_stage") {
+    const stage = canonical;
+    candidates = candidates.map((c) => {
+      if (c.ruledOut) return c;
+      if (c.diseaseId === "chilli_damping_off" && stage !== "seedling") {
+        return {
+          ...c,
+          ruledOut: true,
+          ruleOutReason:
+            "Damping-off only collapses seedlings — past 4 weeks the stem is too lignified for Pythium / Rhizoctonia to take it down.",
+        };
+      }
+      if (
+        (c.diseaseId === "chilli_calcium_def_blossom_end_rot" ||
+          c.diseaseId === "chilli_anthracnose" ||
+          c.diseaseId === "chilli_fruit_borer" ||
+          c.diseaseId === "chilli_choanephora_wet_rot" ||
+          c.diseaseId === "chilli_bacterial_soft_rot" ||
+          c.diseaseId === "chilli_sunscald") &&
+        (stage === "seedling" || stage === "vegetative")
+      ) {
+        return {
+          ...c,
+          ruledOut: true,
+          ruleOutReason:
+            "This disease specifically affects fruit/flowers, but the plant hasn't reached fruiting stage yet.",
+        };
+      }
+      return c;
+    });
+  }
+
+  // Variety hint — Malaysian cultivars with known resistance shift priors.
+  // MC11/MC12 carry ChiVMV tolerance; Kulai is anthracnose-susceptible. We
+  // do not RULE OUT (resistance can break) but we down-weight strongly.
+  if (questionId === "variety") {
+    candidates = candidates.map((c) => {
+      if (c.ruledOut) return c;
+      if (canonical === "mc11_mc12" && c.diseaseId === "chilli_chivmv") {
+        return { ...c, probability: c.probability * 0.4 };
+      }
+      if (canonical === "kulai" && c.diseaseId === "chilli_anthracnose") {
+        return { ...c, probability: Math.min(1, c.probability + 0.15) };
+      }
+      return c;
+    });
+  }
+
+  // Recent treatment rules out diseases that copper / mancozeb / systemic
+  // fungicide WOULD have controlled if applied within 14 days. If they
+  // sprayed copper a week ago and the problem persists, copper-controllable
+  // candidates (bacterial leaf spot, Phytophthora) drop in probability.
+  if (questionId === "last_treatment") {
+    const COPPER_CONTROL = new Set([
+      "chilli_bacterial_leaf_spot",
+      "chilli_phytophthora_blight",
+    ]);
+    const MANCOZEB_CONTROL = new Set([
+      "chilli_anthracnose",
+      "chilli_cercospora",
+      "chilli_choanephora_wet_rot",
+    ]);
+    candidates = candidates.map((c) => {
+      if (c.ruledOut) return c;
+      if (canonical === "copper" && COPPER_CONTROL.has(c.diseaseId)) {
+        return { ...c, probability: c.probability * 0.5 };
+      }
+      if (canonical === "mancozeb" && MANCOZEB_CONTROL.has(c.diseaseId)) {
+        return { ...c, probability: c.probability * 0.5 };
+      }
+      return c;
+    });
+  }
+
   return {
     ...session,
     candidates: rankCandidates(normaliseCandidates(candidates)),
@@ -266,6 +370,54 @@ export function finalise(session: DiagnosisSession): DiagnosisResult {
     })),
   });
   return result;
+}
+
+// ─── Reference comparison verdict ───────────────────────────────
+
+/**
+ * After the result page shows the leading diagnosis with its textbook
+ * signs, the farmer can tap "yes that matches" or "no that doesn't
+ * match." This is a HUGE accuracy lever — the farmer has the actual
+ * plant in front of them and can verify what the AI predicted.
+ *
+ *   matches=true  → boost that candidate's probability +0.10 (caps still
+ *                   apply); the farmer's eyeball confirmation is strong
+ *                   evidence the diagnosis is correct.
+ *   matches=false → rule out that candidate with reason; orchestrator
+ *                   then assembles a new result from whatever's left.
+ *                   This catches model hallucinations the farmer can see
+ *                   immediately.
+ *
+ * Returns the updated session AND the new finalised result.
+ */
+export function applyReferenceVerdict(
+  session: DiagnosisSession,
+  args: { diseaseId: string; matches: boolean }
+): { session: DiagnosisSession; result: DiagnosisResult } {
+  const updated = session.candidates.map((c) => {
+    if (c.diseaseId !== args.diseaseId) return c;
+    if (args.matches) {
+      return { ...c, probability: Math.min(1, c.probability + 0.1) };
+    }
+    return {
+      ...c,
+      ruledOut: true,
+      ruleOutReason:
+        "Farmer compared photo to the textbook signs and said it doesn't match — strong signal to rule this out.",
+    };
+  });
+  const ranked = rankCandidates(normaliseCandidates(updated));
+  const newSession: DiagnosisSession = {
+    ...session,
+    candidates: ranked,
+    referenceVerdict: {
+      diseaseId: args.diseaseId,
+      matches: args.matches,
+      answeredAt: new Date().toISOString(),
+    },
+  };
+  const result = finalise(newSession);
+  return { session: newSession, result };
 }
 
 // ─── Layer 2: duo-layer diagnosis ───────────────────────────────
@@ -384,11 +536,60 @@ export async function applyExtraPhoto(
  *
  * The Layer 1 result is preserved on the session so the UI can show the
  * confidence diff ("was 70% wilt → now 88% Verticillium").
+ *
+ * Uses a SINGLE multi-image Gemini call (`duoLayerVisionFlow`) so the
+ * model can cross-reference photos against each other — far better than
+ * the per-photo averaging the original applyExtraPhoto did. Falls back
+ * to the per-photo merge if the multi-image call fails or no extras.
  */
-export function finaliseDuoLayer(session: DiagnosisSession): DiagnosisResult {
+export async function finaliseDuoLayer(
+  session: DiagnosisSession
+): Promise<DiagnosisResult> {
   const extras = session.extraPhotos ?? [];
-  const lifted = liftCeilingsForCorroboration(session.candidates, extras);
-  const result = assembleDiagnosis(lifted, {
+
+  // No extras → just finalise on whatever Layer 1 produced.
+  if (extras.length === 0 || !session.photoBase64 || !session.photoMimeType) {
+    return finalise(session);
+  }
+
+  const inPlay = session.candidates.filter((c) => !c.ruledOut);
+  const candidateIds = inPlay.map((c) => c.diseaseId);
+
+  let multiImageOutput: Awaited<ReturnType<typeof duoLayerVisionFlow>> | null = null;
+  try {
+    multiImageOutput = await duoLayerVisionFlow({
+      originalPhotoBase64: session.photoBase64,
+      originalPhotoMimeType: session.photoMimeType,
+      extraPhotos: extras.map((e) => ({
+        base64: e.base64,
+        mime: e.mime,
+        kind: e.kind,
+      })),
+      crop: session.crop,
+      candidateIds,
+      pattern: session.pattern!,
+      currentCandidates: session.candidates.map((c) => ({
+        diseaseId: c.diseaseId,
+        probability: c.probability,
+        ruledOut: c.ruledOut,
+      })),
+    });
+  } catch (err) {
+    console.warn("Multi-image Layer 2 call failed, falling back:", err);
+  }
+
+  // Merge multi-image output into session candidates if available
+  let mergedCandidates = session.candidates;
+  if (multiImageOutput) {
+    mergedCandidates = mergeVisionOutput(
+      session.candidates,
+      multiImageOutput.candidates
+    );
+  }
+
+  const lifted = liftCeilingsForCorroboration(mergedCandidates, extras);
+  const ranked = rankCandidates(normaliseCandidates(lifted));
+  const result = assembleDiagnosis(ranked, {
     historyAnswers: session.historyAnswers.map((a) => ({
       question: a.question,
       answer: a.answer,

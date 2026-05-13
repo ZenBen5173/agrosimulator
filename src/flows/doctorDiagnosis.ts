@@ -94,6 +94,33 @@ ABSOLUTE RULES:
 6. If photo is poor quality (blurry, dark, wrong subject, just black or just white), set photoQuality to "poor" or "unusable" and keep ALL probabilities below 0.20.
 7. Output JSON matching the schema exactly — no prose, no markdown.
 
+DIAGNOSTIC DISCIPLINE — FORCED OBSERVATION FIRST.
+Before you assign ANY probability, you must populate the \`observations\` array with 3-5 SPECIFIC, OBSERVABLE features from the photo. Use only descriptions of what is literally visible — no diagnoses yet, no causes, no inferences. Examples of well-formed observations:
+  - "small, sunken, dark-brown lesion on the underside of one fruit, ~5mm wide"
+  - "yellow blotches between leaf veins; veins themselves still green"
+  - "white powdery coating on upper leaf surface, patchy"
+  - "one branch fully wilted while others on the same plant remain turgid"
+Examples of BAD observations to avoid (these are diagnoses, not observations):
+  - "looks like anthracnose"
+  - "fungal infection visible"
+  - "calcium deficiency"
+This forced-observation step is the single biggest accuracy lever. Skipping it leads to the model anchoring on the FIRST candidate that matches one feature and ignoring contradicting evidence on others. Do not skip it.
+
+EXEMPLAR PATTERNS TO INTERNALISE:
+  - ANTHRACNOSE = sunken concentric ring lesion on FRUIT (not leaves)
+  - CERCOSPORA = circular leaf spot with PALE centre + dark ring (frog-eye)
+  - BACTERIAL LEAF SPOT = many small dark angular leaf lesions (vein-bound shape)
+  - POWDERY MILDEW = white powdery coating on leaf SURFACE
+  - PHYTOPHTHORA = dark wet stem lesion AT SOIL LINE + sudden wilt + mushy roots
+  - VERTICILLIUM/FUSARIUM/BACTERIAL WILT = wilt + leaf yellowing — CANNOT separate by leaf alone
+  - VIRUSES = mosaic / mottle / ringspot patterns — CANNOT separate by leaf alone
+  - SPIDER MITE = leaf bronzing + fine WEBBING on underside
+  - APHID/WHITEFLY = visible insects + sticky honeydew + black sooty mould
+  - FRUIT BORER = circular hole at fruit STALK end + caterpillar inside
+  - BLOSSOM END ROT = dark sunken patch on the BOTTOM tip of fruit (calcium)
+  - HERBICIDE DRIFT = cupped/strapped/distorted new leaves, often one-sided
+  - WATER STRESS = wilt that recovers overnight; soil dry to depth
+
 You diagnose the way a Malaysian extension officer would: by ruling things out with evidence, weighing abiotic causes equally, and naming what remains. The farmer will spray harmful chemicals based on what you say. If you're not sure, say so with a low probability.`;
 
 // ─── Helper: build the grounded prompt ─────────────────────────
@@ -259,6 +286,40 @@ export const visionDifferentialFlow = ai.defineFlow(
         }
         return { ...c, probability: p };
       });
+
+      // Self-critique pass — only run when:
+      //   1. There IS a leading candidate (top in-play prob > 0.5), AND
+      //   2. The photo quality is good or acceptable (poor/unusable photos
+      //      already fail the ceiling, no point spending another call)
+      // The critique asks the model to re-examine its own reasoning and
+      // either confirm or revise. Single-call, ~6s, but only fires when
+      // the verdict matters — so amortised cost is small.
+      const inPlay = output.candidates.filter((c) => !c.ruledOut);
+      const top = inPlay.sort((a, b) => b.probability - a.probability)[0];
+      const shouldCritique =
+        top &&
+        top.probability > 0.5 &&
+        (output.photoQuality === "good" || output.photoQuality === "acceptable") &&
+        !output.cropMismatch.detected &&
+        !extraPhotoKind; // only critique on Layer 1 — Layer 2 has multi-photo signal already
+
+      if (shouldCritique) {
+        try {
+          const critiqued = await runSelfCritique({
+            photoBase64,
+            photoMimeType,
+            crop: crop as CropName,
+            currentOutput: output,
+          });
+          if (critiqued) {
+            return critiqued;
+          }
+        } catch (err) {
+          // Self-critique is best-effort; fall through to original output
+          console.warn("Self-critique skipped:", err);
+        }
+      }
+
       return output;
     }
 
@@ -320,4 +381,261 @@ function extraPhotoKindHint(kind: string): string {
     default:
       return "interpret based on what's visible in the close-up";
   }
+}
+
+// ─── Layer 2: multi-image single-call vision flow ───────────────
+
+const DUO_LAYER_INSTRUCTION = `You are reviewing a Malaysian smallholder farmer's plant case with MULTIPLE PHOTOS this time. The first photo is the original whole-plant view; subsequent photos are targeted close-ups (stem cross-section, root close-up, leaf underside, fruit cut open, etc.).
+
+The earlier Layer 1 differential is included for context. Your job is to RE-RANK the candidates using the NEW evidence in the close-ups.
+
+KEY RULES:
+1. Multiple corroborating photos let you reach HIGHER confidence than a single leaf photo. Specifically:
+   - If a stem cross-section clearly shows DARK CHOCOLATE-BROWN vascular ring at the crown → Fusarium can climb to 0.85+
+   - If a stem cross-section shows TAN/GREY-BROWN streak running UP the stem → Verticillium can climb to 0.85+
+   - If milky stream visible from cut stem in clear water → Bacterial wilt can climb to 0.92
+   - If new growth + fruit photo together show consistent virus pattern → that virus can climb to 0.78
+   - If root galls clearly visible → Root-knot nematode can climb to 0.90
+   - If root mush + stem-line lesion visible → Phytophthora climbs to 0.90
+2. CONTRADICTORY photos are valid evidence too. If the leaf says "wilt" but the stem cross-section is CLEAN, then it's NOT a vascular wilt — rule them out and weigh water-stress / waterlogging higher.
+3. Still apply the photoQuality cap to any individual claim (good=0.92 max).
+4. Forced observation step still applies — observations[] must list 3-5 SPECIFIC, OBSERVABLE features ACROSS the photos. Tag each observation with which photo it came from, e.g. "[stem cross-section] tan streak running 8cm up the stem".
+5. Output the SAME schema as the single-photo flow.`;
+
+export const duoLayerVisionFlow = ai.defineFlow(
+  {
+    name: "duoLayerVision",
+    inputSchema: z.object({
+      originalPhotoBase64: z.string(),
+      originalPhotoMimeType: z.string(),
+      extraPhotos: z.array(
+        z.object({
+          base64: z.string(),
+          mime: z.string(),
+          kind: z
+            .enum([
+              "stem_cross_section",
+              "stem_in_water",
+              "new_growth_close_up",
+              "fruit_close_up",
+              "fruit_cut_open",
+              "leaf_underside",
+              "root_close_up",
+              "whole_plant_pattern",
+              "side_by_side_healthy",
+            ])
+            .nullable(),
+        })
+      ),
+      crop: z.enum([
+        "paddy",
+        "chilli",
+        "kangkung",
+        "banana",
+        "corn",
+        "sweet_potato",
+      ]),
+      candidateIds: z.array(z.string()),
+      pattern: z.enum(["one_plant", "few_plants", "whole_plot", "multiple_crops"]),
+      currentCandidates: z.array(
+        z.object({
+          diseaseId: z.string(),
+          probability: z.number(),
+          ruledOut: z.boolean(),
+        })
+      ),
+    }),
+    outputSchema: VisionDifferentialSchema,
+  },
+  async ({
+    originalPhotoBase64,
+    originalPhotoMimeType,
+    extraPhotos,
+    crop,
+    candidateIds,
+    pattern,
+    currentCandidates,
+  }) => {
+    const promptText = buildVisionPrompt(crop as CropName, candidateIds);
+    const patternHint = patternHintText(pattern as SpreadPattern);
+    const currentSummary = currentCandidates
+      .filter((c) => !c.ruledOut)
+      .sort((a, b) => b.probability - a.probability)
+      .slice(0, 5)
+      .map((c) => `  - ${c.diseaseId}: ${(c.probability * 100).toFixed(0)}%`)
+      .join("\n");
+    const extraDescriptions = extraPhotos
+      .map((p, i) => `Photo ${i + 2}: ${p.kind ? `${p.kind} (${extraPhotoKindHint(p.kind)})` : "generic close-up"}`)
+      .join("\n");
+
+    const fullPrompt =
+      promptText +
+      "\n\nFarmer also reported: " +
+      patternHint +
+      "\n\nCURRENT TOP CANDIDATES (from Layer 1):\n" +
+      currentSummary +
+      "\n\nPHOTOS PROVIDED:\nPhoto 1: original whole-plant view\n" +
+      extraDescriptions +
+      "\n\nRe-rank candidates using ALL photos together. Cross-reference what you see in close-ups against what the leaf photo suggested.";
+
+    const promptParts: ({ text: string } | { media: { contentType: string; url: string } })[] = [
+      { text: fullPrompt },
+      {
+        media: {
+          contentType: originalPhotoMimeType,
+          url: `data:${originalPhotoMimeType};base64,${originalPhotoBase64}`,
+        },
+      },
+    ];
+    for (const p of extraPhotos) {
+      promptParts.push({
+        media: {
+          contentType: p.mime,
+          url: `data:${p.mime};base64,${p.base64}`,
+        },
+      });
+    }
+
+    const { output } = await ai.generate({
+      model: DISEASE_MODEL,
+      system: DUO_LAYER_INSTRUCTION,
+      prompt: promptParts,
+      output: { schema: VisionDifferentialSchema },
+      config: { temperature: 0.18 },
+    });
+
+    if (!output) {
+      return {
+        observations: ["Layer 2 multi-image call failed."],
+        candidates: candidateIds.map((id) => ({
+          diseaseId: id,
+          probability: 0,
+          ruledOut: false,
+          ruleOutReason: null,
+          positiveEvidence: [],
+        })),
+        photoQuality: "unusable" as const,
+        photoQualityNote: null,
+        cropMismatch: { detected: false, actualPlant: null, note: null },
+      };
+    }
+
+    // Apply ceiling like the single-photo flow but with HIGHER caps where
+    // multi-photo evidence justifies it. The orchestrator's
+    // liftCeilingsForCorroboration further scales these up based on which
+    // specific extra-photo kinds were uploaded.
+    const ceiling =
+      output.photoQuality === "good"
+        ? 0.94 // 2pt above single-photo because we have corroboration
+        : output.photoQuality === "acceptable"
+        ? 0.78
+        : output.photoQuality === "poor"
+        ? 0.5
+        : 0.25;
+    output.candidates = output.candidates.map((c) => ({
+      ...c,
+      probability: Math.min(c.probability, ceiling),
+    }));
+    return output;
+  }
+);
+
+// ─── Self-critique pass ─────────────────────────────────────────
+
+const SELF_CRITIQUE_INSTRUCTION = `You are reviewing an earlier diagnosis for a Malaysian smallholder farmer's plant photo. Your colleague (a less experienced pathologist) produced the differential below. Your job is to be the SECOND OPINION — a senior pathologist re-examining the case.
+
+Look at the photo and the differential. Then critique honestly:
+- Is the leading candidate's positive evidence ACTUALLY visible in the photo, or did your colleague over-match?
+- Are any ruled-out candidates that should still be in play?
+- Does the OBSERVATIONS list contain ACTUAL observations or did your colleague slip into diagnosis-as-observation?
+- Is the confidence appropriate for what's visible? (Multi-photo evidence not available in this Layer 1 review.)
+
+Output the SAME schema as before, with corrections applied. If the original was already correct, keep it. If not, revise probabilities, ruled-out flags and reasons. Keep the same observation list unless your colleague clearly hallucinated one.
+
+Be conservative: only revise if you have a SPECIFIC reason. The goal is to catch errors, not to second-guess every call.`;
+
+interface SelfCritiqueArgs {
+  photoBase64: string;
+  photoMimeType: string;
+  crop: CropName;
+  currentOutput: VisionDifferential;
+}
+
+async function runSelfCritique(
+  args: SelfCritiqueArgs
+): Promise<VisionDifferential | null> {
+  const { photoBase64, photoMimeType, crop, currentOutput } = args;
+  const candidatesSummary = currentOutput.candidates
+    .map(
+      (c) =>
+        `  - ${c.diseaseId}: prob=${c.probability.toFixed(2)}, ruledOut=${c.ruledOut}` +
+        (c.ruleOutReason ? ` (because: ${c.ruleOutReason})` : "") +
+        (c.positiveEvidence.length > 0
+          ? `; evidence cited: ${c.positiveEvidence.join("; ")}`
+          : "")
+    )
+    .join("\n");
+
+  const reviewPrompt = `CROP: ${crop}
+ORIGINAL OBSERVATIONS:
+${currentOutput.observations.map((o) => `  - ${o}`).join("\n")}
+
+ORIGINAL DIFFERENTIAL:
+${candidatesSummary}
+
+PHOTO QUALITY: ${currentOutput.photoQuality}
+
+Re-examine the attached photo and revise if needed.`;
+
+  const { output } = await ai.generate({
+    model: DISEASE_MODEL,
+    system: SELF_CRITIQUE_INSTRUCTION,
+    prompt: [
+      { text: reviewPrompt },
+      {
+        media: {
+          contentType: photoMimeType,
+          url: `data:${photoMimeType};base64,${photoBase64}`,
+        },
+      },
+    ],
+    output: { schema: VisionDifferentialSchema },
+    config: { temperature: 0.15 }, // even lower than the first pass
+  });
+
+  if (!output) return null;
+
+  // Re-apply the same ceilings the first pass applied — defensive, in case
+  // the critique nudged something past the cap.
+  const ceiling =
+    output.photoQuality === "good"
+      ? 0.92
+      : output.photoQuality === "acceptable"
+      ? 0.65
+      : output.photoQuality === "poor"
+      ? 0.4
+      : 0.2;
+  const VIRUS_CAP = 0.55;
+  const WILT_CAP = 0.55;
+  const VIRAL = new Set([
+    "chilli_chivmv",
+    "chilli_amv",
+    "chilli_cmv",
+    "chilli_tswv",
+    "chilli_pmmov",
+    "chilli_tmv",
+  ]);
+  const WILT = new Set([
+    "chilli_verticillium_wilt",
+    "chilli_fusarium_wilt",
+    "chilli_bacterial_wilt",
+  ]);
+  output.candidates = output.candidates.map((c) => {
+    let p = Math.min(c.probability, ceiling);
+    if (VIRAL.has(c.diseaseId) && !c.ruledOut) p = Math.min(p, VIRUS_CAP);
+    if (WILT.has(c.diseaseId) && !c.ruledOut) p = Math.min(p, WILT_CAP);
+    return { ...c, probability: p };
+  });
+
+  return output;
 }

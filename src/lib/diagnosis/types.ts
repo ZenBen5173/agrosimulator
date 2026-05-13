@@ -221,4 +221,17 @@ export interface DiagnosisSession {
 
   // Final diagnosis (only set on completion — may be Layer 1 or Layer 2)
   result?: DiagnosisResult;
+
+  /**
+   * Farmer's reference-comparison verdict on the top diagnosis. Set when
+   * they tap "yes that matches" or "no that doesn't match" on the result
+   * page after seeing the textbook signs side-by-side. Used by
+   * applyReferenceVerdict to either lock in / boost the diagnosis (yes)
+   * or rule it out and re-rank (no).
+   */
+  referenceVerdict?: {
+    diseaseId: string;
+    matches: boolean;
+    answeredAt: string; // ISO
+  };
 }

@@ -209,6 +209,23 @@ export default function DoctorDiagnosisPage() {
     proceedAfterPhoto(session, pendingNextQuestions);
   }
 
+  /**
+   * Reference-comparison verdict (yes/no on textbook signs). Sends to
+   * server which either boosts the candidate (yes) or rules it out and
+   * re-ranks (no), then refreshes the result.
+   */
+  async function submitReferenceVerdict(matches: boolean) {
+    if (!session || !result?.diagnosis) return;
+    const data = await callApi({
+      step: "reference_verdict",
+      session,
+      referenceDiseaseId: result.diagnosis.diseaseId,
+      referenceMatches: matches,
+    });
+    setSession(data.session);
+    setResult(data.result);
+  }
+
   async function answerHistory(answer: string) {
     if (!session || !pendingHistoryQuestion) return;
     const data = await callApi({
@@ -423,9 +440,13 @@ export default function DoctorDiagnosisPage() {
         {stage === "result" && result && (
           <ResultStep
             result={result}
+            session={session ?? undefined}
             onReset={reset}
             onStartLayerTwo={
               shouldOfferLayerTwo(result) ? startLayerTwo : undefined
+            }
+            onReferenceVerdict={
+              session?.referenceVerdict ? undefined : submitReferenceVerdict
             }
           />
         )}
@@ -442,6 +463,7 @@ export default function DoctorDiagnosisPage() {
         {stage === "result_duo" && result && (
           <ResultStep
             result={result}
+            session={session ?? undefined}
             onReset={reset}
             duoLayer={{ layerOneResult: layerOneResult ?? null }}
           />
@@ -621,6 +643,7 @@ function PhotoStep({
   // styled buttons — the native file picker chrome never shows.
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [qualityWarning, setQualityWarning] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
@@ -631,12 +654,21 @@ function PhotoStep({
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(URL.createObjectURL(file));
     setPendingFile(file);
+    setQualityWarning(null);
+    // Run a quick client-side quality pre-check so the farmer gets
+    // feedback BEFORE we burn a Gemini call. We only WARN — we never
+    // block; the farmer might genuinely have a dim shot of a real
+    // disease, and the model can still make a reasonable call.
+    void analyzePhotoQuality(file).then((res) => {
+      if (res.warning) setQualityWarning(res.warning);
+    });
   }
 
   function clearFile() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setPendingFile(null);
+    setQualityWarning(null);
     if (cameraInputRef.current) cameraInputRef.current.value = "";
     if (galleryInputRef.current) galleryInputRef.current.value = "";
   }
@@ -689,6 +721,17 @@ function PhotoStep({
               <X size={16} />
             </button>
           </div>
+          {qualityWarning && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span className="font-medium">Photo quality check: </span>
+              {qualityWarning}
+              {" "}
+              <span className="text-amber-700">
+                You can still analyse it — the doctor will tell you if it&apos;s
+                too poor to work with.
+              </span>
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               type="button"
@@ -953,6 +996,158 @@ function WrongCropStep({
         </button>
       </div>
     </section>
+  );
+}
+
+// ─── MARDI officer case package (#9) ────────────────────────────
+
+import { buildExpertCasePackage } from "@/lib/diagnosis/decisionLogic";
+
+/**
+ * One-tap copy of the full BM/English case package to the clipboard, so
+ * the farmer can paste into Telegram / SMS / email when reaching out to
+ * a MARDI officer for a second opinion. The package includes the photo
+ * count, every history answer, the AI's leading diagnosis, ruled-out
+ * candidates with reasoning, and what the AI is still uncertain about.
+ *
+ * Photos themselves are NOT in the clipboard payload (text only) — the
+ * follow-up dialog reminds the farmer to attach them separately.
+ */
+function CasePackageCopyButton({ session }: { session: DiagnosisSession }) {
+  const [copied, setCopied] = useState(false);
+  const [showAttachReminder, setShowAttachReminder] = useState(false);
+
+  function handleCopy() {
+    const payload = buildExpertCasePackage(session);
+    navigator.clipboard
+      .writeText(payload)
+      .then(() => {
+        setCopied(true);
+        setShowAttachReminder(true);
+        window.setTimeout(() => setCopied(false), 2500);
+      })
+      .catch(() => {
+        // Fallback for embedded WebViews where clipboard is restricted
+        window.prompt("Copy this case package and send to your MARDI officer:", payload);
+        setShowAttachReminder(true);
+      });
+  }
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={handleCopy}
+        className={`w-full rounded-lg px-3 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+          copied
+            ? "bg-blue-700 text-white"
+            : "bg-blue-600 text-white hover:bg-blue-700"
+        }`}
+      >
+        {copied ? <Check size={14} /> : <Sparkles size={14} />}
+        {copied ? "Copied — paste to MARDI officer" : "Copy case for MARDI officer"}
+      </button>
+      {showAttachReminder && (
+        <p className="text-[11px] text-blue-900">
+          Don&apos;t forget to attach the photo
+          {(session.extraPhotos?.length ?? 0) > 0
+            ? `s (${1 + (session.extraPhotos?.length ?? 0)} total)`
+            : ""}{" "}
+          when you send the message.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Reference comparison card (#1) ─────────────────────────────
+
+import { ruleById } from "@/lib/diagnosis/malaysiaRules";
+
+/**
+ * Side-by-side textbook comparison. Pulls the `signsPositive` array from
+ * the malaysiaRules table for the leading diagnosis and shows it as a
+ * checklist. Farmer taps "yes that matches" or "no that doesn't" — both
+ * answers are valuable signal. The orchestrator's applyReferenceVerdict
+ * either boosts the candidate (yes) or rules it out and re-ranks (no).
+ *
+ * For the demo we use TEXT descriptions of the textbook signs (which
+ * already live in the rules table). When a real photo asset bundle is
+ * available, swap in actual images — the schema below already accepts
+ * that path.
+ */
+function ReferenceComparisonCard({
+  diagnosis,
+  onVerdict,
+}: {
+  diagnosis: NonNullable<DiagnosisResult["diagnosis"]>;
+  onVerdict: (matches: boolean) => void;
+}) {
+  const rule = ruleById(diagnosis.diseaseId);
+  const [submitted, setSubmitted] = useState<"yes" | "no" | null>(null);
+
+  if (!rule) return null;
+
+  function tap(matches: boolean) {
+    setSubmitted(matches ? "yes" : "no");
+    onVerdict(matches);
+  }
+
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-4 space-y-3">
+      <div className="flex items-start gap-2">
+        <Sparkles size={14} className="mt-0.5 text-emerald-600" />
+        <div>
+          <h3 className="text-sm font-semibold text-stone-900">
+            Compare against textbook {diagnosis.name}
+          </h3>
+          <p className="mt-0.5 text-[11px] text-stone-500">
+            Look at your plant. Do these signs match what you actually see?
+            Your answer helps the doctor confirm or reconsider.
+          </p>
+        </div>
+      </div>
+
+      <ul className="space-y-1.5 rounded-lg bg-stone-50 p-3">
+        {rule.signsPositive.slice(0, 5).map((sign, i) => (
+          <li
+            key={i}
+            className="flex items-start gap-2 text-xs text-stone-700"
+          >
+            <span className="mt-0.5 text-emerald-600">✓</span>
+            <span>{sign}</span>
+          </li>
+        ))}
+      </ul>
+
+      {submitted ? (
+        <div
+          className={`rounded-lg px-3 py-2 text-xs ${
+            submitted === "yes"
+              ? "bg-emerald-50 text-emerald-900"
+              : "bg-amber-50 text-amber-900"
+          }`}
+        >
+          {submitted === "yes"
+            ? "Confirmed — boosting confidence on this diagnosis."
+            : "Noted — ruling this out and re-ranking. Refresh to see the new differential."}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => tap(true)}
+            className="rounded-lg bg-emerald-600 px-3 py-2.5 text-xs font-medium text-white hover:bg-emerald-700"
+          >
+            ✓ Yes, matches
+          </button>
+          <button
+            onClick={() => tap(false)}
+            className="rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-xs font-medium text-stone-700 hover:border-amber-400"
+          >
+            ✗ No, mine looks different
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1274,16 +1469,22 @@ function labelForKind(kind: ExtraPhotoKind): string {
 
 function ResultStep({
   result,
+  session,
   onReset,
   onStartLayerTwo,
   duoLayer,
+  onReferenceVerdict,
 }: {
   result: DiagnosisResult;
+  /** Optional: full session, only needed for the "Copy MARDI case" button. */
+  session?: DiagnosisSession;
   onReset: () => void;
   /** When set, the Layer 1 result page shows the "Get a clearer answer" CTA. */
   onStartLayerTwo?: () => void;
   /** When set, this result IS Layer 2 — show the confidence diff vs Layer 1. */
   duoLayer?: { layerOneResult: DiagnosisResult | null };
+  /** When set, shows the textbook reference card with yes/no buttons. */
+  onReferenceVerdict?: (matches: boolean) => void;
 }) {
   const outcomeColour =
     result.outcome === "confirmed"
@@ -1343,6 +1544,16 @@ function ResultStep({
           <div className="text-xs italic">{result.diagnosis.scientificName}</div>
         )}
       </div>
+
+      {/* Textbook reference card — farmer can verify the AI got it right
+          by comparing the photo to the canonical signs. Only shown for
+          Layer 1 (where it most matters); Layer 2 already has corroboration. */}
+      {onReferenceVerdict && result.diagnosis && (
+        <ReferenceComparisonCard
+          diagnosis={result.diagnosis}
+          onVerdict={onReferenceVerdict}
+        />
+      )}
 
       {result.reasoning.whatRuledOut.length > 0 && (
         <div className="rounded-xl border border-stone-200 bg-white p-4">
@@ -1425,23 +1636,25 @@ function ResultStep({
       )}
 
       {result.escalation?.suggested && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-          <h3 className="font-medium">Want a human expert to look?</h3>
-          <p className="mt-1 text-xs text-blue-900">{result.escalation.reason}</p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <div>
+            <h3 className="font-medium text-blue-900">
+              Want a human expert to look?
+            </h3>
+            <p className="mt-1 text-xs text-blue-900">{result.escalation.reason}</p>
+          </div>
+          {session && (
+            <CasePackageCopyButton session={{ ...session, result }} />
+          )}
+          <div className="flex flex-wrap gap-2 text-[11px] text-blue-900">
             {result.escalation.options.includes("doa_lab") && (
               <span className="rounded bg-white px-2 py-1">
-                Submit to DOA lab
-              </span>
-            )}
-            {result.escalation.options.includes("mardi_officer") && (
-              <span className="rounded bg-white px-2 py-1">
-                Message MARDI officer
+                Or submit to DOA lab
               </span>
             )}
             {result.escalation.options.includes("neighbour_vote") && (
               <span className="rounded bg-white px-2 py-1">
-                Anonymous neighbour vote
+                Or get an anonymous neighbour vote
               </span>
             )}
           </div>
@@ -1589,5 +1802,124 @@ function fileToBase64(file: File): Promise<string> {
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Quick client-side photo-quality pre-check. Runs in the browser via the
+ * Canvas API — no upload required. Returns a friendly warning string if
+ * the photo is likely too dark, too bright, or too blurry to give Gemini
+ * a clear shot at the diagnosis.
+ *
+ * We INTENTIONALLY only WARN, never block. A genuinely poor-light shot of
+ * a real disease can still beat a no-diagnosis. The user-facing copy
+ * makes the trade-off clear: "you can still analyse, but consider
+ * retaking."
+ *
+ * Heuristics (tuned conservatively to avoid false alarms on legitimate
+ * field photos):
+ *   - very dark    → mean luminance < 40 (range 0-255)
+ *   - very bright  → mean luminance > 220 (overexposed sun reflection)
+ *   - very blurry  → Laplacian-style variance < 80 (sharper images
+ *                    have variance well above 200 on a 0-255 scale)
+ *   - tiny image   → smaller side < 240 px (camera resampling artefact
+ *                    or screenshot-of-a-screenshot)
+ */
+async function analyzePhotoQuality(
+  file: File
+): Promise<{ warning: string | null }> {
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await loadImage(url);
+    URL.revokeObjectURL(url);
+
+    // Downscale to 256px on the long side for fast pixel processing
+    const targetLong = 256;
+    const scale = targetLong / Math.max(img.width, img.height);
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return { warning: null };
+    ctx.drawImage(img, 0, 0, w, h);
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const px = imageData.data;
+
+    // Compute luminance (Rec. 709) per pixel + edge variance
+    const lum = new Float32Array(w * h);
+    let sumLum = 0;
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+      const r = px[i];
+      const g = px[i + 1];
+      const b = px[i + 2];
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      lum[j] = l;
+      sumLum += l;
+    }
+    const meanLum = sumLum / (w * h);
+
+    // Crude Laplacian: 4-neighbour difference (variance is the proxy for
+    // sharpness; a blurry image has very low edge content).
+    let edgeSum = 0;
+    let edgeSqSum = 0;
+    let edgeCount = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const e =
+          4 * lum[i] -
+          lum[i - 1] -
+          lum[i + 1] -
+          lum[i - w] -
+          lum[i + w];
+        edgeSum += e;
+        edgeSqSum += e * e;
+        edgeCount++;
+      }
+    }
+    const edgeMean = edgeSum / edgeCount;
+    const edgeVariance =
+      edgeSqSum / edgeCount - edgeMean * edgeMean;
+
+    if (Math.min(img.width, img.height) < 240) {
+      return {
+        warning:
+          "Image is small — the doctor may not see fine detail like spore masses or insect bodies.",
+      };
+    }
+    if (meanLum < 40) {
+      return {
+        warning:
+          "Photo looks dark. Bright daylight (open shade) gives the doctor a much better chance.",
+      };
+    }
+    if (meanLum > 220) {
+      return {
+        warning:
+          "Photo looks washed out / overexposed. Try shading the leaf with your hand and re-shoot.",
+      };
+    }
+    if (edgeVariance < 80) {
+      return {
+        warning:
+          "Photo looks blurry. Hold steady, tap to focus on the affected area, and try again.",
+      };
+    }
+    return { warning: null };
+  } catch {
+    // If anything fails (CORS, decode error), silently skip — we'd rather
+    // let the photo through than block on an internal error.
+    return { warning: null };
+  }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
   });
 }

@@ -29,8 +29,14 @@ import {
   getLayerTwoPlan,
   applyExtraPhoto,
   finaliseDuoLayer,
+  applyReferenceVerdict,
 } from "@/services/diagnosis/orchestrator";
 import { persistDiagnosis } from "@/services/diagnosis/persistence";
+import {
+  getPlotHistoryBoosts,
+  getCrossFarmOutbreakBoosts,
+  mergePriorBoosts,
+} from "@/services/diagnosis/historicalPriors";
 import { createClient } from "@/lib/supabase/server";
 import type {
   CropName,
@@ -66,7 +72,8 @@ interface RequestBody {
     // Layer 2 / duo-layer steps:
     | "layer_two_plan"   // returns Layer 1 result + ExtraPhotoRequest[]
     | "extra_photo"      // upload one targeted close-up
-    | "finalise_duo";    // produce Layer 2 final result
+    | "finalise_duo"     // produce Layer 2 final result
+    | "reference_verdict"; // farmer says yes/no on textbook comparison
   session?: DiagnosisSession;
   // step-specific payloads
   crop?: CropName;
@@ -86,6 +93,9 @@ interface RequestBody {
   testResult?: string;
   // Layer 2 specific:
   extraPhotoKind?: ExtraPhotoKind;
+  // Reference verdict specific:
+  referenceDiseaseId?: string;
+  referenceMatches?: boolean;
   // Persistence — opt-in. Requires authenticated session + farmId.
   persist?: boolean;
   farmId?: string;
@@ -109,13 +119,48 @@ export async function POST(request: Request) {
         if (!body.crop || !VALID_CROPS.includes(body.crop)) {
           return badRequest("`crop` is required and must be a known CropName");
         }
+
+        // Best-effort: fetch plot-history + cross-farm priors. Both are
+        // non-blocking — if Supabase fails or the user isn't logged in,
+        // we proceed with uniform priors. The diagnosis still works; it
+        // just won't get the historical head-start.
+        let priorBoosts: Record<string, number> | undefined;
+        try {
+          const supabase = await createClient();
+          const plotHistory = await getPlotHistoryBoosts(supabase, body.plotId);
+          let crossFarm: Record<string, number> = {};
+          if (body.farmId) {
+            // Look up the farm's district to scope the outbreak query
+            const { data: farm } = await supabase
+              .from("farms")
+              .select("district")
+              .eq("id", body.farmId)
+              .maybeSingle();
+            if (farm?.district) {
+              crossFarm = await getCrossFarmOutbreakBoosts(supabase, {
+                district: farm.district,
+                crop: body.crop,
+                excludeFarmId: body.farmId,
+              });
+            }
+          }
+          const merged = mergePriorBoosts(plotHistory, crossFarm);
+          if (Object.keys(merged).length > 0) priorBoosts = merged;
+        } catch (err) {
+          console.warn("Prior-boost lookup skipped:", err);
+        }
+
         const session = startDiagnosis({
           crop: body.crop,
           plotId: body.plotId,
           plotLabel: body.plotLabel,
           recentWeather: body.recentWeather,
+          priorBoosts,
         });
-        return NextResponse.json({ session });
+        return NextResponse.json({
+          session,
+          priorBoostsApplied: priorBoosts ?? null,
+        });
       }
 
       case "pattern": {
@@ -233,10 +278,28 @@ export async function POST(request: Request) {
 
       case "finalise_duo": {
         if (!body.session) return badRequest("`session` required");
-        const result = finaliseDuoLayer(body.session);
+        const result = await finaliseDuoLayer(body.session);
         const persisted = await maybePersist(body, body.session, result);
         return NextResponse.json({
           result,
+          persisted,
+        });
+      }
+
+      case "reference_verdict": {
+        if (!body.session) return badRequest("`session` required");
+        if (!body.referenceDiseaseId) return badRequest("`referenceDiseaseId` required");
+        if (typeof body.referenceMatches !== "boolean") {
+          return badRequest("`referenceMatches` must be boolean");
+        }
+        const out = applyReferenceVerdict(body.session, {
+          diseaseId: body.referenceDiseaseId,
+          matches: body.referenceMatches,
+        });
+        const persisted = await maybePersist(body, out.session, out.result);
+        return NextResponse.json({
+          session: out.session,
+          result: out.result,
           persisted,
         });
       }

@@ -110,13 +110,18 @@ describe("orchestrator: getHistoryQuestions", () => {
     expect(qs.length).toBeLessThanOrEqual(3);
   });
 
-  it("includes onset and weather", () => {
+  it("includes high-discrimination questions for chilli (onset + plant_stage + at least one of weather/treatment/variety)", () => {
     let session = startDiagnosis({ crop: "chilli" });
     session = applyPattern(session, "few_plants");
     const qs = getHistoryQuestions(session);
     const ids = qs.map((q) => q.id);
+    // Onset is universal — weather USED to be too, but with plant_stage,
+    // variety and last_treatment now discriminating more candidates,
+    // weather can be edged out. The contract is now "the picker returns
+    // the most useful 3 questions for the in-play candidates".
     expect(ids).toContain("onset");
-    expect(ids).toContain("weather");
+    const heavyHitters = ["plant_stage", "weather", "last_treatment", "variety"];
+    expect(ids.filter((id) => heavyHitters.includes(id)).length).toBeGreaterThanOrEqual(1);
   });
 });
 

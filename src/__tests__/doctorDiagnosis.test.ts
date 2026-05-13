@@ -344,12 +344,24 @@ describe("selectHistoryQuestions", () => {
     expect(qs.length).toBeLessThanOrEqual(2);
   });
 
-  it("always includes onset + weather as universal questions in top picks", () => {
+  it("includes onset (universal) + at least one of the heavy-discrimination questions", () => {
     const candidates = seedCandidatesForCrop("chilli");
     const qs = selectHistoryQuestions(candidates, 3);
     const ids = qs.map((q) => q.id);
+    // Onset is always boosted; the next picks depend on what discriminates
+    // the most in-play candidates. With plant_stage / variety / last_treatment
+    // now in the catalogue, weather can be edged out — that's correct
+    // behaviour because plant_stage rules out entire candidate groups
+    // (seedling-only / fruiting-only) where weather only nudges priors.
     expect(ids).toContain("onset");
-    expect(ids).toContain("weather");
+    const heavyHitters = [
+      "plant_stage",
+      "weather",
+      "variety",
+      "last_treatment",
+      "soil_drainage",
+    ];
+    expect(ids.filter((id) => heavyHitters.includes(id)).length).toBeGreaterThanOrEqual(1);
   });
 
   it("provides discriminating options for weather question", () => {
@@ -615,5 +627,36 @@ describe("normaliseHistoryAnswer", () => {
 
   it("is case-insensitive and trims", () => {
     expect(normaliseHistoryAnswer("weather", "  RAIN  ")).toBe("rainy");
+  });
+});
+
+// ─── Plot-history priors (#2) ───────────────────────────────────
+
+import { applyPriorBoosts } from "@/services/diagnosis/orchestrator";
+
+describe("applyPriorBoosts (plot history + cross-farm)", () => {
+  it("multiplies the matched candidate's probability by the boost", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_anthracnose", name: "Anthracnose", probability: 0.05, ruledOut: false },
+      { diseaseId: "chilli_cercospora", name: "Cercospora", probability: 0.05, ruledOut: false },
+    ];
+    const boosted = applyPriorBoosts(candidates, { chilli_anthracnose: 2.5 });
+    expect(boosted.find((c) => c.diseaseId === "chilli_anthracnose")!.probability).toBeCloseTo(0.125);
+    expect(boosted.find((c) => c.diseaseId === "chilli_cercospora")!.probability).toBeCloseTo(0.05);
+  });
+
+  it("leaves unmatched candidates untouched", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_anthracnose", name: "A", probability: 0.05, ruledOut: false },
+    ];
+    const boosted = applyPriorBoosts(candidates, { chilli_other_thing: 5 });
+    expect(boosted[0].probability).toBeCloseTo(0.05);
+  });
+
+  it("returns input unchanged when boost map is empty", () => {
+    const candidates: DifferentialCandidate[] = [
+      { diseaseId: "chilli_anthracnose", name: "A", probability: 0.05, ruledOut: false },
+    ];
+    expect(applyPriorBoosts(candidates, {})).toEqual(candidates);
   });
 });
