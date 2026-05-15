@@ -15,6 +15,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -162,6 +163,11 @@ export default function InventoryDetailPage(props: {
                   {item.reorder_quantity && ` — order ${item.reorder_quantity} ${item.unit}`}
                 </div>
               )}
+
+              {/* Restock this — opens a new chat-to-action thread for this
+                  item. AI drafts the RFQ, code generates the PDF, farmer
+                  sends to supplier, etc. */}
+              <RestockButton itemId={item.id} isLow={!!isLow} />
             </section>
 
             {/* Mini stats */}
@@ -263,5 +269,97 @@ function Stat({
       </p>
       <p className={`mt-0.5 text-sm font-semibold ${colourCls}`}>{value}</p>
     </div>
+  );
+}
+
+/**
+ * Manual restock trigger.
+ *
+ * Resolves the farmer's farm, opens (or reuses) a chat-to-action thread for
+ * this inventory item, and routes the farmer to the conversation. The button
+ * is visually emphasised when the item is below its reorder threshold so the
+ * "right move now" is obvious.
+ */
+function RestockButton({ itemId, isLow }: { itemId: string; isLow: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function open() {
+    setBusy(true);
+    setError(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/auth/login");
+        return;
+      }
+      const { data: farm } = await supabase
+        .from("farms")
+        .select("id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (!farm) {
+        setError("No farm found — set one up first.");
+        return;
+      }
+
+      const res = await fetch("/api/restock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "create",
+          farmId: farm.id,
+          inventoryItemId: itemId,
+          triggerKind: "manual",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.restock?.id) {
+        setError(data?.error ?? "Could not open restock chat.");
+        return;
+      }
+      router.push(`/restock/${data.restock.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const baseCls =
+    "mt-3 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors disabled:opacity-60";
+  const toneCls = isLow
+    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+    : "border border-stone-300 bg-white text-stone-700 hover:border-emerald-400 hover:text-emerald-700";
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={open}
+        disabled={busy}
+        className={`${baseCls} ${toneCls}`}
+      >
+        {busy ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <Sparkles size={14} />
+        )}
+        {busy
+          ? "Opening restock chat…"
+          : isLow
+            ? "Restock this — AI drafts RFQ"
+            : "Restock this"}
+      </button>
+      {error && (
+        <p className="mt-2 text-center text-xs text-red-600">{error}</p>
+      )}
+    </>
   );
 }
