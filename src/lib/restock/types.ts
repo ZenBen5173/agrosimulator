@@ -92,12 +92,17 @@ export type RestockMessageAttachments =
     }
   | {
       kind: "group_buy_proposal";
+      /** Set once the group buy has actually been created */
+      groupBuyId?: string;
       itemName: string;
-      individualPriceRm: number;
-      bulkPriceRm: number;
-      minParticipants: number;
+      targetTotalQty: number;
+      unit: string;
+      bulkPricePerUnitRm: number;
+      individualPriceRm?: number;
+      minParticipants?: number;
       supplierName?: string;
-      savingsPercent: number;
+      closesAtIso: string;
+      pitch: string;
     }
   | {
       kind: "po_draft";
@@ -113,16 +118,16 @@ export type RestockMessageAttachments =
   | {
       kind: "consolidated_po_draft";
       groupBuyId: string;
-      participantCount: number;
-      lineItems: {
+      /** Per-item totals (after summing all participations) */
+      itemSummary: {
         itemName: string;
-        quantity: number;
+        totalQuantity: number;
         unit: string;
         pricePerUnitRm: number;
       }[];
-      totalRm: number;
-      addressMode: "shared" | "per_farmer";
-      addresses: string[];
+      grandTotalRm: number;
+      copyToClipboardMessage: string;
+      deliveryInstructions: string;
     }
   | {
       kind: "document_uploaded";

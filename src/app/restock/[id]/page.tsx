@@ -13,6 +13,7 @@
  */
 
 import { use, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -23,6 +24,9 @@ import {
   Camera,
   Send,
   Loader2,
+  Users,
+  Lock,
+  ExternalLink,
   Check,
   Copy as CopyIcon,
 } from "lucide-react";
@@ -33,6 +37,7 @@ import {
   type RestockRequest,
   statusLabel,
 } from "@/lib/restock/types";
+import { createClient } from "@/lib/supabase/client";
 
 export default function RestockChatPage(props: {
   params: Promise<{ id: string }>;
@@ -44,7 +49,17 @@ export default function RestockChatPage(props: {
   const [messages, setMessages] = useState<RestockChatMessage[]>([]);
   const [documents, setDocuments] = useState<RestockDocument[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<null | "draft" | "upload" | "send" | "rfq_pdf">(null);
+  const [busy, setBusy] = useState<
+    | null
+    | "draft"
+    | "upload"
+    | "send"
+    | "rfq_pdf"
+    | "start_group_buy"
+    | "draft_po"
+    | "po_pdf"
+    | "lock"
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [farmerMessage, setFarmerMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -206,8 +221,163 @@ export default function RestockChatPage(props: {
     }
   }
 
+  // Start a group buy from the most recent supplier_quote_parsed message.
+  // Picks the deepest discount tier, sets a 5-day deadline, and routes the
+  // farmer to the new group-buy detail page.
+  async function startGroupBuy() {
+    setBusy("start_group_buy");
+    setError(null);
+    try {
+      if (!restock) throw new Error("Restock not loaded");
+      const parsedMsg = [...messages]
+        .reverse()
+        .find((m) => m.attachments?.kind === "supplier_quote_parsed");
+      const parsed = parsedMsg?.attachments;
+      if (!parsed || parsed.kind !== "supplier_quote_parsed") {
+        throw new Error("No parsed supplier quote in this chat yet.");
+      }
+      // Resolve farm
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+      const { data: farm } = await supabase
+        .from("farms")
+        .select("id, district")
+        .eq("id", restock.farmId)
+        .maybeSingle();
+      if (!farm) throw new Error("Farm not found");
+
+      // Pick the cheapest per-unit tier as the bulk target
+      const sortedTiers = [...parsed.tiers].sort(
+        (a, b) => a.pricePerUnitRm - b.pricePerUnitRm
+      );
+      const bestTier = sortedTiers[0];
+      if (!bestTier) throw new Error("No tier pricing in the parsed quote.");
+      const aloneTier = parsed.tiers.find((t) => t.qty <= bestTier.qty / 2) ??
+        parsed.tiers[parsed.tiers.length - 1] ??
+        bestTier;
+
+      const closesAt = new Date();
+      closesAt.setDate(closesAt.getDate() + 5);
+
+      const res = await fetch("/api/group-buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "create",
+          createInput: {
+            initiatorFarmId: farm.id,
+            district: farm.district ?? "Unknown",
+            itemName: restock.itemName ?? "(item)",
+            unit: bestTier.unit ?? restock.unit ?? "unit",
+            individualPriceRm: aloneTier.pricePerUnitRm,
+            bulkPriceRm: bestTier.pricePerUnitRm,
+            minParticipants: 3,
+            closesAt: closesAt.toISOString(),
+            supplierName: parsed.vendorName ?? restock.supplierName ?? undefined,
+            restockRequestId: restock.id,
+            deliveryMode: "shared_pickup",
+            tierPricing: parsed.tiers.map((t) => ({
+              qty: t.qty,
+              unit: t.unit,
+              pricePerUnitRm: t.pricePerUnitRm,
+            })),
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.groupBuy?.id) {
+        throw new Error(data.error || "Group buy creation failed");
+      }
+      router.push(`/group-buy/${data.groupBuy.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Lock the group buy + ask the AI to draft the consolidated PO message.
+  async function lockAndDraftPo() {
+    if (!restock?.groupBuyId) return;
+    setBusy("lock");
+    setError(null);
+    try {
+      const lockRes = await fetch("/api/group-buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "lock",
+          groupBuyId: restock.groupBuyId,
+        }),
+      });
+      if (!lockRes.ok) {
+        const d = await lockRes.json().catch(() => ({}));
+        throw new Error(d.error || "Lock failed");
+      }
+      setBusy("draft_po");
+      const draftRes = await fetch("/api/group-buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "draft_po",
+          groupBuyId: restock.groupBuyId,
+        }),
+      });
+      if (!draftRes.ok) {
+        const d = await draftRes.json().catch(() => ({}));
+        throw new Error(d.error || "Draft PO failed");
+      }
+      await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Generate + download the consolidated PO PDF.
+  async function downloadConsolidatedPoPdf() {
+    if (!restock?.groupBuyId) return;
+    setBusy("po_pdf");
+    setError(null);
+    try {
+      const res = await fetch("/api/group-buy/po-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupBuyId: restock.groupBuyId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `PO PDF failed (${res.status})`);
+      }
+      const dispo = res.headers.get("content-disposition") ?? "";
+      const m = dispo.match(/filename="?([^"]+)"?/);
+      const fileName = m?.[1] ?? `PO-${restock?.caseRef ?? "AgroSim"}.pdf`;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // Has the AI already produced a draft RFQ? (used to swap "Draft RFQ" → "Download RFQ PDF")
   const hasRfqDraft = messages.some((m) => m.attachments?.kind === "rfq_draft");
+  const hasConsolidatedPoDraft = messages.some(
+    (m) => m.attachments?.kind === "consolidated_po_draft"
+  );
 
   return (
     <div className="min-h-screen bg-stone-50 pb-32">
@@ -255,11 +425,15 @@ export default function RestockChatPage(props: {
           <ActionZone
             restock={restock}
             hasRfqDraft={hasRfqDraft}
+            hasConsolidatedPoDraft={hasConsolidatedPoDraft}
             busy={busy}
             onDraftRfq={draftRfq}
             onDownloadRfqPdf={downloadRfqPdf}
             onUploadFile={uploadSupplierQuote}
             onPasteText={pasteSupplierText}
+            onStartGroupBuy={startGroupBuy}
+            onLockAndDraftPo={lockAndDraftPo}
+            onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
           />
         )}
 
@@ -362,8 +536,9 @@ function AttachmentRender({
       return <ParsedQuoteAttachment a={attachments} />;
     case "group_buy_proposal":
       return <GroupBuyProposalAttachment a={attachments} />;
-    case "po_draft":
     case "consolidated_po_draft":
+      return <ConsolidatedPoDraftAttachment a={attachments} />;
+    case "po_draft":
     case "document_uploaded":
     case "status_change":
       return null; // these render their own info via the message text
@@ -465,14 +640,67 @@ function GroupBuyProposalAttachment({
 }: {
   a: Extract<RestockMessageAttachments, { kind: "group_buy_proposal" }>;
 }) {
+  const closes = new Date(a.closesAtIso);
   return (
-    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 space-y-1 text-[11px]">
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 space-y-1.5 text-[11px]">
       <div>
-        <strong>{a.itemName}</strong> · alone RM {a.individualPriceRm.toFixed(2)} /
-        bulk RM {a.bulkPriceRm.toFixed(2)} · save{" "}
-        <strong>{a.savingsPercent}%</strong>
+        <strong>{a.itemName}</strong> · target {a.targetTotalQty} {a.unit} @ RM{" "}
+        {a.bulkPricePerUnitRm.toFixed(2)}/{a.unit}
       </div>
-      <div className="text-stone-600">Min participants: {a.minParticipants}</div>
+      {a.individualPriceRm != null && (
+        <div className="text-stone-600">
+          Solo price: RM {a.individualPriceRm.toFixed(2)}/{a.unit} · saving{" "}
+          <strong className="text-emerald-700">
+            {Math.round(
+              (1 - a.bulkPricePerUnitRm / a.individualPriceRm) * 100
+            )}
+            %
+          </strong>
+        </div>
+      )}
+      <div className="text-stone-600">
+        Closes {closes.toLocaleDateString("en-MY")}
+        {a.minParticipants ? ` · min ${a.minParticipants} farmers` : ""}
+      </div>
+      <p className="text-stone-700 italic">{a.pitch}</p>
+      {a.groupBuyId && (
+        <Link
+          href={`/group-buy/${a.groupBuyId}`}
+          className="inline-flex items-center gap-1 text-emerald-700 font-medium hover:underline"
+        >
+          Open group buy <ExternalLink size={10} />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function ConsolidatedPoDraftAttachment({
+  a,
+}: {
+  a: Extract<RestockMessageAttachments, { kind: "consolidated_po_draft" }>;
+}) {
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 space-y-1.5 text-[11px]">
+      <div className="font-semibold text-emerald-900">
+        Consolidated PO ready · RM {a.grandTotalRm.toFixed(2)} total
+      </div>
+      <ul className="space-y-0.5 text-stone-700">
+        {a.itemSummary.map((it, i) => (
+          <li key={i}>
+            • {it.itemName}: {it.totalQuantity} {it.unit} @ RM{" "}
+            {it.pricePerUnitRm.toFixed(2)}/{it.unit}
+          </li>
+        ))}
+      </ul>
+      <details className="mt-1">
+        <summary className="cursor-pointer text-emerald-700 font-medium">
+          Show drafted message
+        </summary>
+        <pre className="mt-1 rounded bg-white border border-stone-200 p-2 text-[10px] whitespace-pre-wrap text-stone-700">
+          {a.copyToClipboardMessage}
+        </pre>
+      </details>
     </div>
   );
 }
@@ -482,19 +710,36 @@ function GroupBuyProposalAttachment({
 function ActionZone({
   restock,
   hasRfqDraft,
+  hasConsolidatedPoDraft,
   busy,
   onDraftRfq,
   onDownloadRfqPdf,
   onUploadFile,
   onPasteText,
+  onStartGroupBuy,
+  onLockAndDraftPo,
+  onDownloadConsolidatedPoPdf,
 }: {
   restock: RestockRequest;
   hasRfqDraft: boolean;
-  busy: null | "draft" | "upload" | "send" | "rfq_pdf";
+  hasConsolidatedPoDraft: boolean;
+  busy:
+    | null
+    | "draft"
+    | "upload"
+    | "send"
+    | "rfq_pdf"
+    | "start_group_buy"
+    | "draft_po"
+    | "po_pdf"
+    | "lock";
   onDraftRfq: () => void;
   onDownloadRfqPdf: () => void;
   onUploadFile: (f: File) => void;
   onPasteText: () => void;
+  onStartGroupBuy: () => void;
+  onLockAndDraftPo: () => void;
+  onDownloadConsolidatedPoPdf: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -585,12 +830,91 @@ function ActionZone({
     );
   }
 
-  // Stage 3: quote received — TODO: group buy / direct PO actions (Phase 2)
+  // Stage 3: quote received → either start a group buy or skip to direct PO.
   if (restock.status === "quote_received") {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-        Group buy / direct PO actions coming next — review the parsed quote
-        above for now.
+      <div className="space-y-2">
+        <button
+          onClick={onStartGroupBuy}
+          disabled={busy !== null}
+          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {busy === "start_group_buy" ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Opening group buy…
+            </>
+          ) : (
+            <>
+              <Users size={14} />
+              Start a group buy with neighbours
+            </>
+          )}
+        </button>
+        <p className="text-[11px] text-stone-500 text-center">
+          Or paste another supplier reply to compare quotes.
+        </p>
+      </div>
+    );
+  }
+
+  // Stage 4: group buy live → manage participants, then lock + draft PO.
+  if (restock.status === "group_buy_live" && restock.groupBuyId) {
+    return (
+      <div className="space-y-2">
+        <Link
+          href={`/group-buy/${restock.groupBuyId}`}
+          className="w-full rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 hover:border-emerald-500 flex items-center justify-center gap-2"
+        >
+          <Users size={14} />
+          Open group buy page
+        </Link>
+        <button
+          onClick={onLockAndDraftPo}
+          disabled={busy !== null}
+          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {busy === "lock" || busy === "draft_po" ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              {busy === "lock" ? "Locking buy…" : "Drafting PO…"}
+            </>
+          ) : (
+            <>
+              <Lock size={14} />
+              Lock + draft consolidated PO
+            </>
+          )}
+        </button>
+        {hasConsolidatedPoDraft && (
+          <button
+            onClick={onDownloadConsolidatedPoPdf}
+            disabled={busy !== null}
+            className="w-full rounded-xl border border-emerald-400 bg-white px-4 py-3 text-sm font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {busy === "po_pdf" ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Building PO PDF…
+              </>
+            ) : (
+              <>
+                <Download size={14} />
+                Download consolidated PO PDF
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Stage 5: PO sent → minimal nudge to mark closed when goods arrive.
+  if (restock.status === "po_sent") {
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+        PO sent. When the goods arrive, mark this restock closed from the
+        documents list (coming next: GRN scan).
       </div>
     );
   }

@@ -232,6 +232,113 @@ Extract every quantity / price tier the supplier offered for this item. If multi
   }
 );
 
+// ─── 2b. Group buy proposal from a parsed quote ────────────────
+
+const GroupBuyProposalSchema = z.object({
+  /** Suggested deadline in ISO 8601 (typically 3-7 days out — long enough for
+   *  district neighbours to notice + opt in, short enough to keep urgency). */
+  closesAtIso: z.string(),
+  /** Minimum participants to make the bulk-buy worthwhile (typically the
+   *  number that hits the discount tier). */
+  minParticipants: z.number(),
+  /** Target consolidated quantity (sum across farmers) — usually the
+   *  qty that triggers the best price tier. */
+  targetTotalQty: z.number(),
+  unit: z.string(),
+  /** AI's chosen tier for the group buy (the price the supplier offered
+   *  at this targetTotalQty). */
+  bulkPricePerUnitRm: z.number(),
+  /** Lead-item description for the group buy card. */
+  itemName: z.string(),
+  /** One-line pitch surfaced on the join card. */
+  pitch: z.string(),
+});
+
+export type GroupBuyProposal = z.infer<typeof GroupBuyProposalSchema>;
+
+const PROPOSAL_SYSTEM = `You are deciding whether a Malaysian smallholder farmer should turn a supplier's bulk-discount quote into a district group buy and, if so, with what target quantity + deadline.
+
+ABSOLUTE RULES:
+1. Pick the tier that gives the best price-per-unit. That tier's qty becomes targetTotalQty + the price becomes bulkPricePerUnitRm.
+2. minParticipants = ceil(targetTotalQty / per-farmer typical reorder qty), with floor of 3 (sub-3 is not a group buy).
+3. Deadline: 3-7 days from now. Lean shorter (3 days) if the discount is huge (>25%); longer (7 days) if marginal (10-15%).
+4. Pitch: a one-line BM-leaning hook the farmer can paste in the village WhatsApp group ("Group buy NPK 15-15-15 — RM 8 less per sack kalau cukup 5 orang").
+5. Output JSON only.`;
+
+export const proposeGroupBuyFromQuoteFlow = ai.defineFlow(
+  {
+    name: "proposeGroupBuyFromQuote",
+    inputSchema: z.object({
+      itemName: z.string(),
+      supplierName: z.string().nullable().optional(),
+      tiers: z.array(
+        z.object({
+          qty: z.number(),
+          unit: z.string(),
+          pricePerUnitRm: z.number(),
+        })
+      ),
+      farmerTypicalReorderQty: z.number(),
+    }),
+    outputSchema: GroupBuyProposalSchema,
+  },
+  async (input) => {
+    const tierLines = input.tiers
+      .map(
+        (t, i) =>
+          `Tier ${i + 1}: ${t.qty} ${t.unit} @ RM ${t.pricePerUnitRm.toFixed(2)}/${t.unit}`
+      )
+      .join("\n");
+    const todayIso = new Date().toISOString();
+
+    const prompt = `ITEM: ${input.itemName}
+Supplier: ${input.supplierName ?? "(unknown)"}
+Today: ${todayIso}
+Farmer's typical reorder qty (alone): ${input.farmerTypicalReorderQty} ${input.tiers[0]?.unit ?? "unit"}
+
+SUPPLIER TIER PRICING:
+${tierLines}
+
+Pick the best bulk tier and propose a group buy. Output JSON only.`;
+
+    const { output } = await ai.generate({
+      model: DEFAULT_MODEL,
+      system: PROPOSAL_SYSTEM,
+      prompt,
+      output: { schema: GroupBuyProposalSchema },
+      config: { temperature: 0.3 },
+    });
+
+    if (!output) {
+      // Fallback: pick the lowest price-per-unit tier deterministically.
+      const sorted = [...input.tiers].sort(
+        (a, b) => a.pricePerUnitRm - b.pricePerUnitRm
+      );
+      const best = sorted[0] ?? {
+        qty: input.farmerTypicalReorderQty * 5,
+        unit: "unit",
+        pricePerUnitRm: 0,
+      };
+      const closesAt = new Date();
+      closesAt.setDate(closesAt.getDate() + 5);
+      const minParticipants = Math.max(
+        3,
+        Math.ceil(best.qty / Math.max(1, input.farmerTypicalReorderQty))
+      );
+      return {
+        closesAtIso: closesAt.toISOString(),
+        minParticipants,
+        targetTotalQty: best.qty,
+        unit: best.unit,
+        bulkPricePerUnitRm: best.pricePerUnitRm,
+        itemName: input.itemName,
+        pitch: `Group buy ${input.itemName} — RM ${best.pricePerUnitRm.toFixed(2)}/${best.unit} kalau cukup ${minParticipants} orang. Tutup ${closesAt.toLocaleDateString("en-MY")}.`,
+      };
+    }
+    return output;
+  }
+);
+
 // ─── 3. Consolidated PO draft flow (group buy ended) ────────────
 
 const ConsolidatedPoDetailsSchema = z.object({
