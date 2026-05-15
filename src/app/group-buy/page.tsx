@@ -56,6 +56,7 @@ export default function GroupBuyListPage() {
   // Fetch when farm resolved
   useEffect(() => {
     if (!farmId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     Promise.all([
       district
@@ -174,7 +175,11 @@ export default function GroupBuyListPage() {
 
 function BuyCard({ buy, mine }: { buy: GroupBuy; mine?: boolean }) {
   const closes = new Date(buy.closesAt);
-  const closesIn = Math.max(0, Math.ceil((closes.getTime() - Date.now()) / 86400000));
+  // Capture "now" once at mount via the useState init function — that's
+  // the React-blessed escape hatch for impure values like Date.now().
+  // It would only refresh on a remount, which is fine for a list card.
+  const [nowMs] = useState(() => Date.now());
+  const closesIn = Math.max(0, Math.ceil((closes.getTime() - nowMs) / 86400000));
   return (
     <li>
       <Link

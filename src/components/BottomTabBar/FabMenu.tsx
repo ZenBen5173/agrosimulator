@@ -10,6 +10,8 @@ import {
   CloudSun,
   TrendingUp,
   Settings,
+  ShoppingCart,
+  BookOpen,
 } from "lucide-react";
 import { useFarmStore } from "@/stores/farmStore";
 
@@ -27,7 +29,7 @@ interface FabAction {
   needsPlot?: boolean;
 }
 
-// AgroSim 2.0 quick actions — one per layer, plus weather context.
+// AgroSim 2.1 quick actions — care, supplies, money, info.
 const FAB_GROUPS: { label: string; items: FabAction[] }[] = [
   {
     label: "Care",
@@ -36,16 +38,23 @@ const FAB_GROUPS: { label: string; items: FabAction[] }[] = [
     ],
   },
   {
-    label: "Inventory",
+    label: "Supplies",
     items: [
       { key: "scan_receipt", label: "Scan Receipt", icon: Receipt, href: "/receipts", color: "bg-violet-500" },
+      { key: "restocks", label: "Restocks", icon: ShoppingCart, href: "/restock", color: "bg-emerald-600" },
     ],
   },
   {
     label: "Co-op",
     items: [
-      { key: "groupbuy", label: "Group Buys", icon: Users, href: "/market", color: "bg-amber-500" },
+      { key: "groupbuy", label: "Group Buys", icon: Users, href: "/group-buy", color: "bg-amber-500" },
       { key: "prices", label: "Price Check", icon: TrendingUp, href: "/market", color: "bg-indigo-500" },
+    ],
+  },
+  {
+    label: "Money",
+    items: [
+      { key: "books", label: "Books", icon: BookOpen, href: "/books", color: "bg-stone-700" },
     ],
   },
   {

@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Check,
   Copy as CopyIcon,
+  Coins,
 } from "lucide-react";
 import {
   type RestockChatMessage,
@@ -373,6 +374,159 @@ export default function RestockChatPage(props: {
     }
   }
 
+  // Mark goods received → posts the GRN journal entry (debit Inventory,
+  // credit AP) using the most recent consolidated_po_draft itemSummary
+  // OR the rfq_draft (when the farmer skipped the group buy).
+  async function markGoodsReceived() {
+    if (!restock) return;
+    setBusy("upload");
+    setError(null);
+    try {
+      const consolidated = [...messages]
+        .reverse()
+        .find((m) => m.attachments?.kind === "consolidated_po_draft");
+      const rfq = [...messages]
+        .reverse()
+        .find((m) => m.attachments?.kind === "rfq_draft");
+
+      let lineItems: Array<{
+        itemName: string;
+        itemType?: string;
+        qty: number;
+        unit: string;
+        totalCostRm: number;
+      }> = [];
+
+      if (consolidated && consolidated.attachments?.kind === "consolidated_po_draft") {
+        lineItems = consolidated.attachments.itemSummary.map((it) => ({
+          itemName: it.itemName,
+          qty: it.totalQuantity,
+          unit: it.unit,
+          totalCostRm: it.totalQuantity * it.pricePerUnitRm,
+        }));
+      } else if (rfq && rfq.attachments?.kind === "rfq_draft") {
+        // Fallback when no group buy: charge for the recommended qty at
+        // the last_purchase_price_rm from inventory_items.
+        const supabase = createClient();
+        const { data: item } = await supabase
+          .from("inventory_items")
+          .select("item_name, item_type, last_purchase_price_rm")
+          .eq("id", restock.inventoryItemId)
+          .maybeSingle();
+        lineItems = [
+          {
+            itemName: rfq.attachments.itemName,
+            itemType: item?.item_type ?? undefined,
+            qty: rfq.attachments.requestedQuantity,
+            unit: rfq.attachments.unit,
+            totalCostRm:
+              rfq.attachments.requestedQuantity *
+              Number(item?.last_purchase_price_rm ?? 0),
+          },
+        ];
+      } else {
+        throw new Error("No PO draft or RFQ to bill against.");
+      }
+
+      const res = await fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "post_grn",
+          farmId: restock.farmId,
+          reference: `${restock.caseRef} GRN`,
+          supplierName: restock.supplierName ?? undefined,
+          sourceId: restock.id,
+          lineItems,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "GRN post failed");
+      }
+
+      // Post a confirmation message to the chat
+      await fetch("/api/restock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "send_message",
+          restockRequestId: restock.id,
+          content: `Marked ${lineItems.length} item${lineItems.length === 1 ? "" : "s"} as received. Posted to Books — Accounts Payable now reflects this purchase.`,
+        }),
+      });
+      await fetch("/api/restock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "transition",
+          restockRequestId: restock.id,
+          toStatus: "closed",
+          reason: "Goods received + journal posted",
+        }),
+      });
+      await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Mark paid → posts the supplier-payment journal entry (debit AP,
+  // credit Cash). Uses the totalRm from the consolidated PO draft.
+  async function markPaid() {
+    if (!restock?.supplierName) {
+      setError("Supplier name is missing — can't auto-post payment.");
+      return;
+    }
+    setBusy("send");
+    setError(null);
+    try {
+      const consolidated = [...messages]
+        .reverse()
+        .find((m) => m.attachments?.kind === "consolidated_po_draft");
+      const total =
+        consolidated && consolidated.attachments?.kind === "consolidated_po_draft"
+          ? consolidated.attachments.grandTotalRm
+          : Number(restock.totalValueRm ?? 0);
+      if (total <= 0) {
+        throw new Error("No total amount on file — set it manually.");
+      }
+      const res = await fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "post_payment",
+          farmId: restock.farmId,
+          supplierName: restock.supplierName,
+          amountRm: total,
+          paymentMethod: "cash",
+          reference: `${restock.caseRef} payment`,
+          sourceId: restock.id,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Payment post failed");
+      }
+      await fetch("/api/restock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "send_message",
+          restockRequestId: restock.id,
+          content: `Marked supplier paid: RM ${total.toFixed(2)} to ${restock.supplierName}. Cash decreased + AP cleared in Books.`,
+        }),
+      });
+      await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // Has the AI already produced a draft RFQ? (used to swap "Draft RFQ" → "Download RFQ PDF")
   const hasRfqDraft = messages.some((m) => m.attachments?.kind === "rfq_draft");
   const hasConsolidatedPoDraft = messages.some(
@@ -434,6 +588,8 @@ export default function RestockChatPage(props: {
             onStartGroupBuy={startGroupBuy}
             onLockAndDraftPo={lockAndDraftPo}
             onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
+            onMarkGoodsReceived={markGoodsReceived}
+            onMarkPaid={markPaid}
           />
         )}
 
@@ -719,6 +875,8 @@ function ActionZone({
   onStartGroupBuy,
   onLockAndDraftPo,
   onDownloadConsolidatedPoPdf,
+  onMarkGoodsReceived,
+  onMarkPaid,
 }: {
   restock: RestockRequest;
   hasRfqDraft: boolean;
@@ -740,6 +898,8 @@ function ActionZone({
   onStartGroupBuy: () => void;
   onLockAndDraftPo: () => void;
   onDownloadConsolidatedPoPdf: () => void;
+  onMarkGoodsReceived: () => void;
+  onMarkPaid: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -909,13 +1069,61 @@ function ActionZone({
     );
   }
 
-  // Stage 5: PO sent → minimal nudge to mark closed when goods arrive.
+  // Stage 5: PO sent → mark goods received + paid (auto-posts to Books).
   if (restock.status === "po_sent") {
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-        PO sent. When the goods arrive, mark this restock closed from the
-        documents list (coming next: GRN scan).
+      <div className="space-y-2">
+        <button
+          onClick={onMarkGoodsReceived}
+          disabled={busy !== null}
+          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {busy === "upload" ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Recording goods received…
+            </>
+          ) : (
+            <>
+              <Check size={14} />
+              Mark goods received (post GRN)
+            </>
+          )}
+        </button>
+        <button
+          onClick={onMarkPaid}
+          disabled={busy !== null}
+          className="w-full rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-medium text-emerald-800 hover:border-emerald-500 disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {busy === "send" ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Recording payment…
+            </>
+          ) : (
+            <>
+              <Coins size={14} />
+              Mark supplier paid
+            </>
+          )}
+        </button>
+        <p className="text-[10px] text-stone-500 text-center">
+          Both actions auto-post journal entries to your Books.
+        </p>
       </div>
+    );
+  }
+
+  // Stage 6: Closed — link to Books for the trail of evidence.
+  if (restock.status === "closed") {
+    return (
+      <Link
+        href="/books"
+        className="block w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-700 hover:border-emerald-400 text-center flex items-center justify-center gap-2"
+      >
+        <Coins size={14} />
+        See this restock in Books
+      </Link>
     );
   }
 

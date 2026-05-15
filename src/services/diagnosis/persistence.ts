@@ -5,10 +5,16 @@
  * treatment follow-up. The pg_cron job `doctor-treatment-followup-daily`
  * (created in migration v2_0_treatment_followup_cron) picks up due
  * follow-ups every morning and creates a task for the farmer.
+ *
+ * Phase 3 (2.1): also auto-posts a Crop Health Costs journal entry to
+ * the Books when the diagnosis is confirmed AND the AI estimated a
+ * chemical cost. The posting is best-effort — failures are logged but
+ * never block the diagnosis save.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DiagnosisResult, DiagnosisSession } from "@/lib/diagnosis/types";
+import { postDiagnosisTreatment } from "@/services/books/postings";
 
 const FOLLOWUP_DELAY_DAYS = 5;
 
@@ -73,6 +79,39 @@ export async function persistDiagnosis(
       console.warn("Failed to schedule follow-up:", fErr.message);
     } else if (fRow) {
       followupRowId = fRow.id;
+    }
+  }
+
+  // Auto-post the Crop Health Costs journal entry. Best-effort — never
+  // blocks the diagnosis save. Only posts when we have:
+  //   - a confirmed (or uncertain-but-actionable) outcome
+  //   - a chemical with an estimated cost
+  if (
+    result.outcome === "confirmed" &&
+    result.prescription?.controlNow.chemical?.estCostRm
+  ) {
+    const chem = result.prescription.controlNow.chemical;
+    try {
+      await postDiagnosisTreatment(supabase, {
+        farmId,
+        createdBy: userId,
+        diagnosisSessionId: row.id,
+        diagnosisName: result.diagnosis?.name,
+        items: [
+          {
+            itemName: chem.name,
+            itemType: "pesticide", // safe default for chemical control
+            qtyUsed: 1, // unit assumed; the cost IS the value
+            unit: "treatment",
+            unitCostRm: chem.estCostRm ?? 0,
+          },
+        ],
+      });
+    } catch (err) {
+      console.warn(
+        "Failed to auto-post diagnosis treatment to Books:",
+        err instanceof Error ? err.message : err
+      );
     }
   }
 

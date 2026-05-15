@@ -334,10 +334,11 @@ function drawItemsTable(
   items: PoLineItem[]
 ): number {
   // 4 columns: Item | Qty | Unit price | Line total
+  // c4 (line total) is the remainder; we don't need an explicit width
+  // because it's only used for X positioning of the right-most column.
   const c1 = 240; // item name
   const c2 = 90; // qty
   const c3 = 100; // unit price
-  const c4 = CONTENT_W - c1 - c2 - c3; // line total
   const rowH = 26;
   const headerH = 24;
   const totalH = headerH + items.length * rowH;

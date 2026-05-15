@@ -25,7 +25,6 @@ import {
   Clock,
   Check,
   Lock,
-  Download,
   Copy as CopyIcon,
   Sparkles,
 } from "lucide-react";
