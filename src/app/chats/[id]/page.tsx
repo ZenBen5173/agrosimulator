@@ -527,11 +527,11 @@ export default function RestockChatPage(props: {
     }
   }
 
-  // Has the AI already produced a draft RFQ? (used to swap "Draft RFQ" → "Download RFQ PDF")
+  // Has the AI already produced a draft RFQ? Drives whether we render
+  // the "Draft RFQ for me" greeting (only when nothing is drafted yet).
+  // The consolidated PO PDF action lives inside the consolidated_po_draft
+  // message itself, so no flag needed for it here.
   const hasRfqDraft = messages.some((m) => m.attachments?.kind === "rfq_draft");
-  const hasConsolidatedPoDraft = messages.some(
-    (m) => m.attachments?.kind === "consolidated_po_draft"
-  );
 
   return (
     <div className="min-h-screen bg-stone-50 pb-24">
@@ -567,41 +567,66 @@ export default function RestockChatPage(props: {
           </div>
         )}
 
-        {/* Messages — tight chat spacing. Each AI message renders alone,
-            then the LAST message in the thread also gets the active
-            action chips inline beneath it (Claude-style suggested
-            actions). */}
-        <div className="space-y-3">
-          {messages.map((m, idx) => {
-            const isLast = idx === messages.length - 1;
-            return (
-              <MessageCard
-                key={m.id}
-                message={m}
-                trailingSlot={
-                  isLast && restock ? (
-                    <ActionZone
-                      restock={restock}
-                      hasRfqDraft={hasRfqDraft}
-                      hasConsolidatedPoDraft={hasConsolidatedPoDraft}
-                      busy={busy}
-                      onDraftRfq={draftRfq}
-                      onDownloadRfqPdf={downloadRfqPdf}
-                      onUploadFile={uploadSupplierQuote}
-                      onPasteText={pasteSupplierText}
-                      onStartGroupBuy={startGroupBuy}
-                      onLockAndDraftPo={lockAndDraftPo}
-                      onDownloadConsolidatedPoPdf={
-                        downloadConsolidatedPoPdf
-                      }
-                      onMarkGoodsReceived={markGoodsReceived}
-                      onMarkPaid={markPaid}
-                    />
-                  ) : undefined
-                }
-              />
-            );
-          })}
+        {/* Messages — WhatsApp-style. Each AI message that proposed an
+            action carries its own button row INSIDE the bubble, so the
+            chat reads as a continuous conversation with embedded calls
+            to action. We also synthesise an AI greeting at the very
+            front when no RFQ has been drafted yet, and a farewell at
+            the end when the chat is closed — those carry the only
+            actions that aren't tied to a real message. */}
+        <div className="space-y-2">
+          {/* Greeting (draft state, no RFQ yet) */}
+          {restock && !hasRfqDraft && restock.status === "draft" && (
+            <SyntheticAiBubble
+              text={`Saya boleh draft RFQ untuk ${restock.itemName ?? "this item"}. Tap below to start.`}
+              actions={
+                <ChipRow>
+                  <PrimaryChip
+                    onClick={draftRfq}
+                    disabled={busy !== null}
+                    icon={busy === "draft" ? "spin" : Sparkles}
+                    label={busy === "draft" ? "Drafting RFQ…" : "Draft RFQ for me"}
+                  />
+                </ChipRow>
+              }
+            />
+          )}
+
+          {messages.map((m) => (
+            <MessageCard
+              key={m.id}
+              message={m}
+              actions={
+                m.role === "ai" && m.attachments ? (
+                  <MessageActions
+                    attachments={m.attachments}
+                    restock={restock}
+                    busy={busy}
+                    onDownloadRfqPdf={downloadRfqPdf}
+                    onUploadFile={uploadSupplierQuote}
+                    onPasteText={pasteSupplierText}
+                    onStartGroupBuy={startGroupBuy}
+                    onLockAndDraftPo={lockAndDraftPo}
+                    onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
+                    onMarkGoodsReceived={markGoodsReceived}
+                    onMarkPaid={markPaid}
+                  />
+                ) : null
+              }
+            />
+          ))}
+
+          {/* Farewell (closed) */}
+          {restock?.status === "closed" && (
+            <SyntheticAiBubble
+              text="Restock complete. Inventory + AP cleared in your Books."
+              actions={
+                <ChipRow>
+                  <SecondaryChip asLink="/books" icon={Coins} label="See in Books" />
+                </ChipRow>
+              }
+            />
+          )}
 
           {/* Typing indicator while AI is working */}
           {(busy === "draft" ||
@@ -692,39 +717,32 @@ function TypingIndicator() {
   );
 }
 
-// ─── Message bubble ─────────────────────────────────────────────
+// ─── Message bubble — WhatsApp-style ────────────────────────────
 //
-// Claude.ai-style layout:
-//   - system messages = centered grey chip
-//   - ai messages     = left-aligned, Sparkles avatar in the gutter, plain
-//                        text content (no bubble background — just sits
-//                        on the page like a Claude reply). Attachments
-//                        + trailing action chips render below as bordered
-//                        cards.
-//   - farmer messages = right-aligned, soft emerald pill. No avatar.
-//
-// trailingSlot is the inline action zone for the LAST message in the
-// thread — Claude-style "suggested next moves" attached visually to
-// the latest reply.
+//   - system messages  = centered grey chip
+//   - ai messages      = LEFT-aligned, white bubble with subtle shadow
+//                         + bottom-left tail. Attachment cards + the
+//                         message's own action buttons render INSIDE
+//                         the bubble (separated by a thin rule).
+//   - farmer messages  = RIGHT-aligned, pastel emerald-100 bubble with
+//                         dark text + bottom-right tail. Like the
+//                         outgoing WhatsApp bubble.
 
 function MessageCard({
   message,
-  trailingSlot,
+  actions,
 }: {
   message: RestockChatMessage;
-  trailingSlot?: React.ReactNode;
+  /** Inline button row rendered inside the AI bubble, below content
+   *  and attachments. Only meaningful for ai messages. */
+  actions?: React.ReactNode;
 }) {
   if (message.role === "system") {
     return (
       <div className="my-2 text-center">
-        <span className="inline-block rounded-full bg-stone-100 px-3 py-1 text-[10px] text-stone-500">
+        <span className="inline-block rounded-full bg-stone-200/70 px-3 py-1 text-[10px] text-stone-600">
           {message.content}
         </span>
-        {trailingSlot && (
-          <div className="mt-2 flex justify-center">
-            <div className="w-full max-w-[90%]">{trailingSlot}</div>
-          </div>
-        )}
       </div>
     );
   }
@@ -733,40 +751,234 @@ function MessageCard({
 
   if (isAi) {
     return (
-      <div className="flex gap-2.5">
-        <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
-          <Sparkles size={12} className="text-emerald-700" />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <div className="flex justify-start">
+        <div className="max-w-[88%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 shadow-sm border border-stone-200">
           <p className="text-sm text-stone-800 whitespace-pre-wrap leading-relaxed">
             {message.content}
           </p>
           {message.attachments && (
-            <AttachmentRender attachments={message.attachments} />
+            <div className="mt-2">
+              <AttachmentRender attachments={message.attachments} />
+            </div>
           )}
-          {trailingSlot}
+          {actions && (
+            <div className="mt-2 -mx-3 -mb-2 border-t border-stone-100 px-3 pt-2 pb-2">
+              {actions}
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  // farmer
+  // farmer (outgoing) — pastel emerald, like WhatsApp's outgoing
   return (
-    <>
-      <div className="flex justify-end">
-        <div className="flex max-w-[85%] flex-col items-end gap-1.5">
-          <div className="rounded-2xl rounded-br-md bg-emerald-600 px-3.5 py-2 shadow-sm">
-            <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">
-              {message.content}
-            </p>
-          </div>
-          {message.attachments && (
+    <div className="flex justify-end">
+      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-emerald-100 px-3 py-2 shadow-sm">
+        <p className="text-sm text-stone-900 whitespace-pre-wrap leading-relaxed">
+          {message.content}
+        </p>
+        {message.attachments && (
+          <div className="mt-2">
             <AttachmentRender attachments={message.attachments} />
-          )}
-        </div>
+          </div>
+        )}
       </div>
-      {trailingSlot && <div className="mt-2">{trailingSlot}</div>}
-    </>
+    </div>
+  );
+}
+
+// A "synthetic" AI bubble for the greeting + farewell — same shell as a
+// real AI message but built from local props. Lets us render contextual
+// CTAs (Draft RFQ, See in Books) without persisting a fake message row.
+function SyntheticAiBubble({
+  text,
+  actions,
+}: {
+  text: string;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[88%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 shadow-sm border border-stone-200">
+        <p className="text-sm text-stone-800 whitespace-pre-wrap leading-relaxed">
+          {text}
+        </p>
+        {actions && (
+          <div className="mt-2 -mx-3 -mb-2 border-t border-stone-100 px-3 pt-2 pb-2">
+            {actions}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Message-attachment-driven button group ─────────────────────
+//
+// Each AI message attachment kind produces its own set of inline
+// chips. So the rfq_draft message carries the [Download RFQ PDF] +
+// [Upload supplier reply] + [Paste reply text] row, the
+// supplier_quote_parsed message carries [Start group buy], and so on.
+// Stale chips on older messages still work — re-downloading an old
+// RFQ PDF is a perfectly valid operation — so we never hide them.
+
+function MessageActions({
+  attachments,
+  restock,
+  busy,
+  onDownloadRfqPdf,
+  onUploadFile,
+  onPasteText,
+  onStartGroupBuy,
+  onLockAndDraftPo,
+  onDownloadConsolidatedPoPdf,
+  onMarkGoodsReceived,
+  onMarkPaid,
+}: {
+  attachments: RestockMessageAttachments;
+  restock: RestockRequest | null;
+  busy:
+    | null
+    | "draft"
+    | "upload"
+    | "send"
+    | "rfq_pdf"
+    | "start_group_buy"
+    | "draft_po"
+    | "po_pdf"
+    | "lock";
+  onDownloadRfqPdf: () => void;
+  onUploadFile: (f: File) => void;
+  onPasteText: () => void;
+  onStartGroupBuy: () => void;
+  onLockAndDraftPo: () => void;
+  onDownloadConsolidatedPoPdf: () => void;
+  onMarkGoodsReceived: () => void;
+  onMarkPaid: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  switch (attachments.kind) {
+    case "rfq_draft":
+      return (
+        <ChipRow>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*,application/pdf,.docx,.xlsx,.doc,.xls,.txt"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onUploadFile(f);
+              if (fileRef.current) fileRef.current.value = "";
+            }}
+          />
+          <PrimaryChip
+            onClick={onDownloadRfqPdf}
+            disabled={busy !== null}
+            icon={busy === "rfq_pdf" ? "spin" : Download}
+            label={busy === "rfq_pdf" ? "Building PDF…" : "Download RFQ PDF"}
+          />
+          <SecondaryChip
+            onClick={() => fileRef.current?.click()}
+            disabled={busy !== null}
+            icon={Upload}
+            label="Upload supplier reply"
+          />
+          <SecondaryChip
+            onClick={onPasteText}
+            disabled={busy !== null}
+            icon={Camera}
+            label="Paste reply text"
+          />
+        </ChipRow>
+      );
+
+    case "supplier_quote_parsed":
+      return (
+        <ChipRow>
+          <PrimaryChip
+            onClick={onStartGroupBuy}
+            disabled={busy !== null}
+            icon={busy === "start_group_buy" ? "spin" : Users}
+            label={
+              busy === "start_group_buy"
+                ? "Opening group buy…"
+                : "Start a group buy"
+            }
+          />
+        </ChipRow>
+      );
+
+    case "group_buy_proposal":
+      return (
+        <ChipRow>
+          {attachments.groupBuyId && (
+            <SecondaryChip
+              asLink={`/group-buy/${attachments.groupBuyId}`}
+              icon={Users}
+              label="Open group buy"
+            />
+          )}
+          {restock?.status === "group_buy_live" && (
+            <PrimaryChip
+              onClick={onLockAndDraftPo}
+              disabled={busy !== null}
+              icon={busy === "lock" || busy === "draft_po" ? "spin" : Lock}
+              label={
+                busy === "lock"
+                  ? "Locking…"
+                  : busy === "draft_po"
+                    ? "Drafting PO…"
+                    : "Lock + draft PO"
+              }
+            />
+          )}
+        </ChipRow>
+      );
+
+    case "consolidated_po_draft":
+      return (
+        <ChipRow>
+          <PrimaryChip
+            onClick={onDownloadConsolidatedPoPdf}
+            disabled={busy !== null}
+            icon={busy === "po_pdf" ? "spin" : Download}
+            label={busy === "po_pdf" ? "Building PO PDF…" : "Download PO PDF"}
+          />
+          {restock?.status === "po_sent" && (
+            <>
+              <SecondaryChip
+                onClick={onMarkGoodsReceived}
+                disabled={busy !== null}
+                icon={busy === "upload" ? "spin" : Check}
+                label={busy === "upload" ? "Recording…" : "Mark goods received"}
+                tone="emerald"
+              />
+              <SecondaryChip
+                onClick={onMarkPaid}
+                disabled={busy !== null}
+                icon={busy === "send" ? "spin" : Coins}
+                label={busy === "send" ? "Recording…" : "Mark supplier paid"}
+                tone="emerald"
+              />
+            </>
+          )}
+        </ChipRow>
+      );
+
+    default:
+      return null;
+  }
+}
+
+// Vertical stack of chips — WhatsApp's interactive button list pattern.
+// Each chip becomes a full-width row inside the bubble, separated by
+// a hairline divider so they read as discrete actions.
+function ChipRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">{children}</div>
   );
 }
 
@@ -953,213 +1165,26 @@ function ConsolidatedPoDraftAttachment({
   );
 }
 
-// ─── Action zone (the buttons at the bottom of the messages) ───
-
-function ActionZone({
-  restock,
-  hasRfqDraft,
-  hasConsolidatedPoDraft,
-  busy,
-  onDraftRfq,
-  onDownloadRfqPdf,
-  onUploadFile,
-  onPasteText,
-  onStartGroupBuy,
-  onLockAndDraftPo,
-  onDownloadConsolidatedPoPdf,
-  onMarkGoodsReceived,
-  onMarkPaid,
-}: {
-  restock: RestockRequest;
-  hasRfqDraft: boolean;
-  hasConsolidatedPoDraft: boolean;
-  busy:
-    | null
-    | "draft"
-    | "upload"
-    | "send"
-    | "rfq_pdf"
-    | "start_group_buy"
-    | "draft_po"
-    | "po_pdf"
-    | "lock";
-  onDraftRfq: () => void;
-  onDownloadRfqPdf: () => void;
-  onUploadFile: (f: File) => void;
-  onPasteText: () => void;
-  onStartGroupBuy: () => void;
-  onLockAndDraftPo: () => void;
-  onDownloadConsolidatedPoPdf: () => void;
-  onMarkGoodsReceived: () => void;
-  onMarkPaid: () => void;
-}) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
-  // Stage 1: no RFQ drafted yet → primary CTA = "Draft RFQ"
-  if (!hasRfqDraft && restock.status === "draft") {
-    return (
-      <Chips>
-        <PrimaryChip
-          onClick={onDraftRfq}
-          disabled={busy !== null}
-          icon={busy === "draft" ? "spin" : Sparkles}
-          label={busy === "draft" ? "Drafting RFQ…" : "Draft RFQ for me"}
-        />
-      </Chips>
-    );
-  }
-
-  // Stage 2: RFQ drafted → primary actions = download PDF + upload supplier reply
-  if (
-    hasRfqDraft &&
-    (restock.status === "awaiting_supplier" ||
-      restock.status === "draft")
-  ) {
-    return (
-      <Chips>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*,application/pdf,.docx,.xlsx,.doc,.xls,.txt"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onUploadFile(f);
-            if (fileRef.current) fileRef.current.value = "";
-          }}
-        />
-        <PrimaryChip
-          onClick={onDownloadRfqPdf}
-          disabled={busy !== null}
-          icon={busy === "rfq_pdf" ? "spin" : Download}
-          label={busy === "rfq_pdf" ? "Building PDF…" : "Download RFQ PDF"}
-        />
-        <SecondaryChip
-          onClick={() => fileRef.current?.click()}
-          disabled={busy !== null}
-          icon={Upload}
-          label="Upload supplier reply"
-        />
-        <SecondaryChip
-          onClick={onPasteText}
-          disabled={busy !== null}
-          icon={Camera}
-          label="Paste reply text"
-        />
-        {busy === "upload" && <SubtleNote text="Parsing supplier reply…" />}
-      </Chips>
-    );
-  }
-
-  // Stage 3: quote received → either start a group buy or skip to direct PO.
-  if (restock.status === "quote_received") {
-    return (
-      <Chips>
-        <PrimaryChip
-          onClick={onStartGroupBuy}
-          disabled={busy !== null}
-          icon={busy === "start_group_buy" ? "spin" : Users}
-          label={
-            busy === "start_group_buy"
-              ? "Opening group buy…"
-              : "Start a group buy with neighbours"
-          }
-        />
-      </Chips>
-    );
-  }
-
-  // Stage 4: group buy live → manage participants, then lock + draft PO.
-  if (restock.status === "group_buy_live" && restock.groupBuyId) {
-    return (
-      <Chips>
-        <SecondaryChip
-          asLink={`/group-buy/${restock.groupBuyId}`}
-          icon={Users}
-          label="Open group buy"
-        />
-        <PrimaryChip
-          onClick={onLockAndDraftPo}
-          disabled={busy !== null}
-          icon={busy === "lock" || busy === "draft_po" ? "spin" : Lock}
-          label={
-            busy === "lock"
-              ? "Locking…"
-              : busy === "draft_po"
-                ? "Drafting PO…"
-                : "Lock + draft PO"
-          }
-        />
-        {hasConsolidatedPoDraft && (
-          <SecondaryChip
-            onClick={onDownloadConsolidatedPoPdf}
-            disabled={busy !== null}
-            icon={busy === "po_pdf" ? "spin" : Download}
-            label={
-              busy === "po_pdf" ? "Building PO PDF…" : "Download PO PDF"
-            }
-            tone="emerald"
-          />
-        )}
-      </Chips>
-    );
-  }
-
-  // Stage 5: PO sent → mark goods received + paid (auto-posts to Books).
-  if (restock.status === "po_sent") {
-    return (
-      <Chips>
-        <PrimaryChip
-          onClick={onMarkGoodsReceived}
-          disabled={busy !== null}
-          icon={busy === "upload" ? "spin" : Check}
-          label={busy === "upload" ? "Recording…" : "Mark goods received"}
-        />
-        <SecondaryChip
-          onClick={onMarkPaid}
-          disabled={busy !== null}
-          icon={busy === "send" ? "spin" : Coins}
-          label={busy === "send" ? "Recording…" : "Mark supplier paid"}
-          tone="emerald"
-        />
-        <SubtleNote text="Both auto-post to your Books." />
-      </Chips>
-    );
-  }
-
-  // Stage 6: Closed — link to Books for the trail of evidence.
-  if (restock.status === "closed") {
-    return (
-      <Chips>
-        <SecondaryChip asLink="/books" icon={Coins} label="See this in Books" />
-      </Chips>
-    );
-  }
-
-  return null;
-}
-
 // ─── Inline chip primitives ────────────────────────────────────
 //
-// Compact pill buttons that flow under an AI message — Claude-style
-// suggested actions. Wrap in a flex container so they reflow on
-// narrow screens.
-
-function Chips({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap gap-1.5 mt-1">{children}</div>;
-}
+// Full-width buttons that live inside the AI bubble (WhatsApp-style
+// interactive button list). Used by MessageActions above.
 
 type ChipIcon =
   | "spin"
   | React.ComponentType<{ size?: number; className?: string }>;
 
-function chipIcon(icon: ChipIcon | undefined) {
+function chipIcon(icon: ChipIcon | undefined, className = "") {
   if (!icon) return null;
   if (icon === "spin")
-    return <Loader2 size={12} className="animate-spin" />;
+    return <Loader2 size={14} className={`animate-spin ${className}`} />;
   const Icon = icon;
-  return <Icon size={12} />;
+  return <Icon size={14} className={className} />;
 }
+
+// Full-width button row that lives inside the AI bubble — WhatsApp
+// "interactive button" treatment. Primary = emerald fill, Secondary =
+// muted bg. Both stretch the full width of the bubble interior.
 
 function PrimaryChip({
   onClick,
@@ -1176,7 +1201,7 @@ function PrimaryChip({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+      className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
     >
       {chipIcon(icon)}
       {label}
@@ -1201,8 +1226,8 @@ function SecondaryChip({
 }) {
   const cls =
     tone === "emerald"
-      ? "inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-white px-3.5 py-1.5 text-xs font-medium text-emerald-800 hover:border-emerald-500 disabled:opacity-50 transition-colors"
-      : "inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3.5 py-1.5 text-xs font-medium text-stone-700 hover:border-emerald-400 disabled:opacity-50 transition-colors";
+      ? "flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+      : "flex w-full items-center justify-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 transition-colors";
 
   if (asLink) {
     return (
@@ -1218,14 +1243,6 @@ function SecondaryChip({
       {chipIcon(icon)}
       {label}
     </button>
-  );
-}
-
-function SubtleNote({ text }: { text: string }) {
-  return (
-    <span className="basis-full text-[10px] text-stone-500">
-      {text}
-    </span>
   );
 }
 
