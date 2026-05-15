@@ -534,7 +534,7 @@ export default function RestockChatPage(props: {
   );
 
   return (
-    <div className="min-h-screen bg-stone-50 pb-32">
+    <div className="min-h-screen bg-stone-50 pb-48">
       <header className="sticky top-0 z-10 border-b border-stone-200 bg-white px-4 py-3">
         <div className="mx-auto flex max-w-xl items-center gap-2">
           <Link href="/chats" aria-label="Back to chats">
@@ -553,9 +553,9 @@ export default function RestockChatPage(props: {
         </div>
       </header>
 
-      <main className="mx-auto max-w-xl space-y-3 p-4">
+      <main className="mx-auto max-w-xl px-3 pt-3 pb-3">
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
             {error}
           </div>
         )}
@@ -567,43 +567,33 @@ export default function RestockChatPage(props: {
           </div>
         )}
 
-        {/* Messages */}
-        {messages.map((m) => (
-          <MessageCard key={m.id} message={m} />
-        ))}
+        {/* Messages — tight chat spacing */}
+        <div className="space-y-2">
+          {messages.map((m) => (
+            <MessageCard key={m.id} message={m} />
+          ))}
 
-        <div ref={messagesEndRef} />
+          {/* Typing indicator while AI is working */}
+          {(busy === "draft" ||
+            busy === "upload" ||
+            busy === "draft_po" ||
+            busy === "start_group_buy") && <TypingIndicator />}
 
-        {/* Action zone */}
-        {restock && (
-          <ActionZone
-            restock={restock}
-            hasRfqDraft={hasRfqDraft}
-            hasConsolidatedPoDraft={hasConsolidatedPoDraft}
-            busy={busy}
-            onDraftRfq={draftRfq}
-            onDownloadRfqPdf={downloadRfqPdf}
-            onUploadFile={uploadSupplierQuote}
-            onPasteText={pasteSupplierText}
-            onStartGroupBuy={startGroupBuy}
-            onLockAndDraftPo={lockAndDraftPo}
-            onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
-            onMarkGoodsReceived={markGoodsReceived}
-            onMarkPaid={markPaid}
-          />
-        )}
+          <div ref={messagesEndRef} />
+        </div>
 
-        {/* Document list */}
+        {/* Documents pill — compact, opens an inline list */}
         {documents.length > 0 && (
-          <div className="rounded-xl border border-stone-200 bg-white p-3">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-stone-400">
-              Documents in this restock
-            </p>
-            <ul className="space-y-1">
+          <details className="mt-3 rounded-xl border border-stone-200 bg-white">
+            <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-stone-500 flex items-center gap-2">
+              <FileText size={12} className="text-stone-400" />
+              {documents.length} document{documents.length === 1 ? "" : "s"}
+            </summary>
+            <ul className="border-t border-stone-100 divide-y divide-stone-100">
               {documents.map((d) => (
                 <li
                   key={d.id}
-                  className="flex items-center gap-2 text-xs text-stone-700"
+                  className="flex items-center gap-2 px-3 py-2 text-xs text-stone-700"
                 >
                   <FileText size={12} className="text-stone-400 flex-shrink-0" />
                   <span className="truncate">{d.fileName ?? d.kind}</span>
@@ -613,67 +603,138 @@ export default function RestockChatPage(props: {
                 </li>
               ))}
             </ul>
-          </div>
+          </details>
         )}
+      </main>
 
-        {/* Farmer free-text input — for any clarifying notes */}
-        <div className="fixed bottom-0 left-0 right-0 border-t border-stone-200 bg-white p-3">
-          <div className="mx-auto flex max-w-xl gap-2">
-            <input
-              type="text"
-              value={farmerMessage}
-              onChange={(e) => setFarmerMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void sendFarmerMessage();
-              }}
-              placeholder="Add a note to this thread…"
-              className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none"
-              disabled={busy === "send"}
+      {/* Sticky action zone + compose bar — both fixed at bottom so the
+          farmer's primary moves are always thumb-reachable */}
+      {restock && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-200 bg-white"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <div className="mx-auto max-w-xl space-y-2 px-3 py-2">
+            <ActionZone
+              restock={restock}
+              hasRfqDraft={hasRfqDraft}
+              hasConsolidatedPoDraft={hasConsolidatedPoDraft}
+              busy={busy}
+              onDraftRfq={draftRfq}
+              onDownloadRfqPdf={downloadRfqPdf}
+              onUploadFile={uploadSupplierQuote}
+              onPasteText={pasteSupplierText}
+              onStartGroupBuy={startGroupBuy}
+              onLockAndDraftPo={lockAndDraftPo}
+              onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
+              onMarkGoodsReceived={markGoodsReceived}
+              onMarkPaid={markPaid}
             />
-            <button
-              onClick={sendFarmerMessage}
-              disabled={!farmerMessage.trim() || busy === "send"}
-              className="rounded-lg bg-emerald-600 px-3 text-white hover:bg-emerald-700 disabled:opacity-50"
-              aria-label="Send"
-            >
-              <Send size={16} />
-            </button>
+            <div className="flex items-end gap-2">
+              <input
+                type="text"
+                value={farmerMessage}
+                onChange={(e) => setFarmerMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void sendFarmerMessage();
+                }}
+                placeholder="Message the assistant…"
+                className="flex-1 rounded-2xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm placeholder:text-stone-400 focus:border-emerald-400 focus:bg-white focus:outline-none"
+                disabled={busy === "send"}
+              />
+              <button
+                onClick={sendFarmerMessage}
+                disabled={!farmerMessage.trim() || busy === "send"}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors flex-shrink-0"
+                aria-label="Send"
+              >
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </div>
-      </main>
+      )}
     </div>
   );
 }
 
-// ─── Message card ───────────────────────────────────────────────
+// Animated three-dot typing bubble — appears under the AI side while a
+// draft / parse / PO action is in flight. Mirrors the AI bubble shell so
+// it feels like the assistant is mid-reply, not a separate spinner.
+function TypingIndicator() {
+  return (
+    <div className="flex items-end gap-2">
+      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
+        <Sparkles size={12} className="text-emerald-700" />
+      </span>
+      <div className="rounded-2xl rounded-bl-md border border-stone-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-1">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-stone-400 [animation-delay:0ms]" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-stone-400 [animation-delay:200ms]" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-stone-400 [animation-delay:400ms]" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Message bubble ─────────────────────────────────────────────
+//
+// WhatsApp/Claude-style alignment:
+//   - system messages = centered grey chip
+//   - ai messages     = left-aligned, Sparkles avatar, white bubble with
+//                       subtle border, attachments rendered inside
+//   - farmer messages = right-aligned, emerald bubble with white text
+//
+// No per-message role label — alignment + avatar do the work, same as
+// every modern messaging app.
 
 function MessageCard({ message }: { message: RestockChatMessage }) {
   if (message.role === "system") {
     return (
-      <div className="text-center">
+      <div className="my-1 text-center">
         <span className="inline-block rounded-full bg-stone-100 px-3 py-1 text-[10px] text-stone-500">
           {message.content}
         </span>
       </div>
     );
   }
+
   const isAi = message.role === "ai";
-  const bg = isAi ? "bg-emerald-50 border-emerald-200" : "bg-white border-stone-200";
-  const label = isAi ? "Plant doctor / supply assistant" : "You";
-  return (
-    <div className={`rounded-xl border ${bg} p-3 space-y-2`}>
-      <div className="flex items-center gap-2">
-        {isAi && <Sparkles size={12} className="text-emerald-700" />}
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">
-          {label}
+
+  if (isAi) {
+    return (
+      <div className="flex items-end gap-2">
+        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
+          <Sparkles size={12} className="text-emerald-700" />
         </span>
+        <div className="flex max-w-[85%] flex-col gap-1.5">
+          <div className="rounded-2xl rounded-bl-md border border-stone-200 bg-white px-3 py-2 shadow-sm">
+            <p className="text-sm text-stone-800 whitespace-pre-wrap leading-relaxed">
+              {message.content}
+            </p>
+          </div>
+          {message.attachments && (
+            <AttachmentRender attachments={message.attachments} />
+          )}
+        </div>
       </div>
-      <p className="text-sm text-stone-800 whitespace-pre-wrap">
-        {message.content}
-      </p>
-      {message.attachments && (
-        <AttachmentRender attachments={message.attachments} />
-      )}
+    );
+  }
+
+  // farmer
+  return (
+    <div className="flex justify-end">
+      <div className="flex max-w-[85%] flex-col items-end gap-1.5">
+        <div className="rounded-2xl rounded-br-md bg-emerald-600 px-3 py-2 shadow-sm">
+          <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">
+            {message.content}
+          </p>
+        </div>
+        {message.attachments && (
+          <AttachmentRender attachments={message.attachments} />
+        )}
+      </div>
     </div>
   );
 }
