@@ -106,9 +106,16 @@ export async function POST() {
         movements: seeded.movementsCount,
         diagnoses: seeded.diagnosisSessionIds.length,
         groupBuys: seeded.groupBuyIds.length,
+        groupBuyItems: seeded.groupBuyItemCount,
         farmerSales: seeded.farmerSalesCount,
         tasks: seeded.tasksCount,
         plotEvents: seeded.plotEventsCount,
+        // 2.1 additions
+        restockChats: seeded.restockRequestCount,
+        restockMessages: seeded.restockMessageCount,
+        restockDocuments: seeded.restockDocumentCount,
+        journalEntries: seeded.journalEntryCount,
+        journalLines: seeded.journalLineCount,
       },
     });
   } catch (err) {

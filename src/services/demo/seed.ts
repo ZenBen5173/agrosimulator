@@ -101,6 +101,13 @@ export interface SeedResult {
   movementsCount: number;
   tasksCount: number;
   plotEventsCount: number;
+  // 2.1 additions
+  restockRequestCount: number;
+  restockMessageCount: number;
+  restockDocumentCount: number;
+  groupBuyItemCount: number;
+  journalEntryCount: number;
+  journalLineCount: number;
 }
 
 export async function seedDemoData(
@@ -766,6 +773,844 @@ export async function seedDemoData(
     { farm_id: demoFarmId, plot_id: plotC, event_type: "planting",    title: "Planted kangkung in Plot C",        description: "Fast-growing 21-day variety.",                             created_at: tsOff(-14) },
   ]);
 
+  // ─── AgroSim 2.1 additions ────────────────────────────────────
+  //
+  // Three sections that exercise the chat-to-action loop end-to-end:
+  //   A. Multi-item rows + delivery preferences for the group buys above
+  //   B. Six restock chats covering every status of the workflow
+  //   C. Full double-entry trail in Books (GRNs, sales, treatments,
+  //      payments, wastage)
+
+  // ── A. Group-buy items + delivery upgrades ─────────────────────
+  let groupBuyItemCount = 0;
+  // Look up the group buys we just made by item_name so we can attach items
+  const { data: gbAll } = await supabase
+    .from("pact_group_buys")
+    .select("id, item_name, item_category, unit, individual_price_rm, bulk_price_rm")
+    .in("id", groupBuyIds);
+  const gbByItemName = new Map((gbAll ?? []).map((g) => [g.item_name as string, g]));
+
+  // Always seed a sort_order=0 row mirroring the parent — one stable
+  // place for the items list to read from.
+  const itemRowsPayload: Array<Record<string, unknown>> = [];
+  for (const g of gbAll ?? []) {
+    itemRowsPayload.push({
+      group_buy_id: g.id,
+      item_name: g.item_name,
+      item_category: g.item_category,
+      unit: g.unit,
+      individual_price_rm: g.individual_price_rm,
+      bulk_price_rm: g.bulk_price_rm,
+      sort_order: 0,
+    });
+  }
+
+  // Add a SECOND item to the NPK buy to show the multi-item shape.
+  const gbNpkRow = gbByItemName.get("NPK 15-15-15 (50kg sack)");
+  if (gbNpkRow) {
+    itemRowsPayload.push({
+      group_buy_id: gbNpkRow.id,
+      item_name: "Borate micronutrient (1kg)",
+      item_category: "fertilizer",
+      unit: "packet",
+      individual_price_rm: 18,
+      bulk_price_rm: 14,
+      sort_order: 1,
+    });
+  }
+  // And a second item to the Roundup buy.
+  const gbRoundRow = gbByItemName.get("Glyphosate 41% (5L can)");
+  if (gbRoundRow) {
+    itemRowsPayload.push({
+      group_buy_id: gbRoundRow.id,
+      item_name: "Sticker / wetting agent (1L)",
+      item_category: "pesticide",
+      unit: "bottle",
+      individual_price_rm: 24,
+      bulk_price_rm: 19,
+      sort_order: 1,
+    });
+  }
+  if (itemRowsPayload.length > 0) {
+    await supabase.from("pact_group_buy_items").insert(itemRowsPayload);
+    groupBuyItemCount = itemRowsPayload.length;
+  }
+
+  // Sprinkle delivery preferences on the existing participations so the
+  // consolidated PO PDF has both pickup and per-farmer delivery rows.
+  if (gbRoundRow) {
+    // Pak Ali wants delivery to his farm (so the PDF shows both modes)
+    await supabase
+      .from("pact_group_buy_participants")
+      .update({
+        delivery_mode: "deliver_to_farm",
+        delivery_address: "Lot 224, Jalan Sungai Ruil, Cameron Highlands",
+      })
+      .eq("group_buy_id", gbRoundRow.id)
+      .eq("user_id", demoUserId);
+    // Hassan does shared pickup
+    await supabase
+      .from("pact_group_buy_participants")
+      .update({ delivery_mode: "pickup" })
+      .eq("group_buy_id", gbRoundRow.id)
+      .eq("user_id", neighbourUserId);
+  }
+
+  // ── B. Restock chats — six in different states ─────────────────
+  //
+  // Case ref format: RR-YYYYMMDD-NNNN (chronological per day per farm).
+  // We seed in date order so the day counter stays sane.
+  const refForDay = (offsetDays: number, seq: number): string => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + offsetDays);
+    const yyyymmdd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    return `RR-${yyyymmdd}-${String(seq).padStart(4, "0")}`;
+  };
+
+  type RestockSeed = {
+    /** Days offset from today for opened_at */
+    daysAgo: number;
+    seq: number;
+    inventoryItem: string;
+    status:
+      | "draft"
+      | "awaiting_supplier"
+      | "quote_received"
+      | "group_buy_live"
+      | "po_sent"
+      | "closed";
+    supplierName?: string;
+    requestedQty?: number;
+    unit?: string;
+    totalValueRm?: number;
+    /** Link to one of the group buys by item_name (resolved from gbByItemName) */
+    linkedGroupBuyItemName?: string;
+    /** Trigger: how the chat opened — drives the system message wording */
+    trigger: "manual" | "auto_low_stock";
+    closedDaysAgo?: number;
+    /** Conversation transcript to lay down */
+    messages: Array<{
+      role: "ai" | "farmer" | "system";
+      daysAgo: number;
+      content: string;
+      attachments?: Record<string, unknown>;
+    }>;
+    documents?: Array<{
+      kind: "rfq" | "supplier_quote" | "po" | "grn";
+      fileName: string;
+      mimeType: string;
+      sizeBytes: number;
+      daysAgo: number;
+      parsedData?: Record<string, unknown>;
+    }>;
+  };
+
+  const restockSeeds: RestockSeed[] = [
+    // 1. Antracol — auto-detected low stock 2 days ago, RFQ drafted, awaiting supplier reply
+    {
+      daysAgo: -2,
+      seq: 1,
+      inventoryItem: "Antracol 70% WP",
+      status: "awaiting_supplier",
+      supplierName: "Kedai Pertanian Sungai Ruil",
+      requestedQty: 1,
+      unit: "kg",
+      trigger: "auto_low_stock",
+      messages: [
+        {
+          role: "system",
+          daysAgo: -2,
+          content: "Detected low stock — opening a restock request automatically.",
+        },
+        {
+          role: "ai",
+          daysAgo: -2,
+          content:
+            "Drafted RFQ for 1 kg Antracol 70% WP (with bulk tiers). Tap \"Generate RFQ PDF\" — I'll create it, you copy the message and download the PDF, then send both to your supplier.",
+          attachments: {
+            kind: "rfq_draft",
+            itemName: "Antracol 70% WP",
+            requestedQuantity: 1,
+            unit: "kg",
+            quantityTiers: [
+              { qty: 1, label: "Just for me" },
+              { qty: 5, label: "Group of 5 farmers" },
+              { qty: 10, label: "Group of 10 farmers" },
+            ],
+            supplierName: "Kedai Pertanian Sungai Ruil",
+            copyToClipboardMessage:
+              "Salam tuan,\n\nSaya nak tanya harga untuk Antracol 70% WP:\n- 1 kg (sendiri)\n- 5 kg (group 5 orang)\n- 10 kg (group 10 orang)\n\nTuan ada bulk discount? Terima kasih.\n\n[Pak Ali]",
+          },
+        },
+        {
+          role: "system",
+          daysAgo: -2,
+          content: "RFQ drafted — awaiting supplier reply",
+          attachments: { kind: "status_change", from: "draft", to: "awaiting_supplier" },
+        },
+      ],
+      documents: [
+        {
+          kind: "rfq",
+          fileName: "RFQ-RR-DEMO-0001.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 18432,
+          daysAgo: -2,
+        },
+      ],
+    },
+    // 2. NPK 15-15-15 — quote received with bulk discount, group buy is live (linked to gbNpk)
+    {
+      daysAgo: -3,
+      seq: 1,
+      inventoryItem: "NPK 15-15-15",
+      status: "group_buy_live",
+      supplierName: "Kedai Pertanian Ah Kow",
+      requestedQty: 5,
+      unit: "sack",
+      linkedGroupBuyItemName: "NPK 15-15-15 (50kg sack)",
+      trigger: "manual",
+      messages: [
+        {
+          role: "system",
+          daysAgo: -3,
+          content: "Restock request opened from inventory.",
+        },
+        {
+          role: "ai",
+          daysAgo: -3,
+          content:
+            "Drafted RFQ for 5 sack NPK 15-15-15 (with bulk tiers). Tap \"Generate RFQ PDF\" — I'll create it, you copy the message and download the PDF, then send both to your supplier.",
+          attachments: {
+            kind: "rfq_draft",
+            itemName: "NPK 15-15-15",
+            requestedQuantity: 5,
+            unit: "sack",
+            quantityTiers: [
+              { qty: 1, label: "Just for me" },
+              { qty: 5, label: "Group of 5 farmers" },
+              { qty: 10, label: "Group of 10 farmers" },
+            ],
+            supplierName: "Kedai Pertanian Ah Kow",
+            copyToClipboardMessage:
+              "Salam tuan,\n\nSaya nak tanya harga NPK 15-15-15 (50kg sack):\n- 1 sack (sendiri)\n- 5 sack (group 5 orang)\n- 10 sack (group 10 orang)\n\nTuan ada bulk discount? Terima kasih.\n\n[Pak Ali]",
+          },
+        },
+        {
+          role: "system",
+          daysAgo: -3,
+          content: "RFQ drafted — awaiting supplier reply",
+          attachments: { kind: "status_change", from: "draft", to: "awaiting_supplier" },
+        },
+        {
+          role: "farmer",
+          daysAgo: -2,
+          content: "Sudah hantar ke Ah Kow di WhatsApp.",
+        },
+        {
+          role: "ai",
+          daysAgo: -1,
+          content:
+            "Got the supplier's reply. Discount of 18% at 5+ sacks — meaningful saving. Want to start a group buy with neighbours so everyone shares the bulk price?",
+          attachments: {
+            kind: "supplier_quote_parsed",
+            vendorName: "Kedai Pertanian Ah Kow",
+            tiers: [
+              { qty: 1, unit: "sack", pricePerUnitRm: 95 },
+              { qty: 5, unit: "sack", pricePerUnitRm: 78 },
+              { qty: 10, unit: "sack", pricePerUnitRm: 72 },
+            ],
+            bulkDiscountDetected: true,
+            bulkDiscountReasoning: "Discount of 18% at 5+ sacks vs single sack price",
+            raw: "1 sack @ RM 95.00, 5 sack @ RM 78.00, 10 sack @ RM 72.00",
+          },
+        },
+        {
+          role: "system",
+          daysAgo: -1,
+          content: "Supplier quote uploaded + parsed",
+          attachments: { kind: "status_change", from: "awaiting_supplier", to: "quote_received" },
+        },
+        {
+          role: "ai",
+          daysAgo: -1,
+          content:
+            "Group buy opened: target 5 sack, closes in 5 days. Share the join link with neighbours in your district WhatsApp group.",
+          attachments: {
+            kind: "group_buy_proposal",
+            itemName: "NPK 15-15-15",
+            targetTotalQty: 5,
+            unit: "sack",
+            bulkPricePerUnitRm: 78,
+            individualPriceRm: 95,
+            minParticipants: 5,
+            supplierName: "Kedai Pertanian Ah Kow",
+            closesAtIso: tsOff(5),
+            pitch:
+              "Group buy NPK 15-15-15 — RM 17 less per sack kalau cukup 5 orang. Tutup Jumaat depan.",
+          },
+        },
+        {
+          role: "system",
+          daysAgo: -1,
+          content: "Group buy opened",
+          attachments: { kind: "status_change", from: "quote_received", to: "group_buy_live" },
+        },
+      ],
+      documents: [
+        {
+          kind: "rfq",
+          fileName: "RFQ-RR-DEMO-0002.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 19112,
+          daysAgo: -3,
+        },
+        {
+          kind: "supplier_quote",
+          fileName: "ah-kow-npk-quote.jpg",
+          mimeType: "image/jpeg",
+          sizeBytes: 142336,
+          daysAgo: -1,
+          parsedData: {
+            vendorName: "Kedai Pertanian Ah Kow",
+            tiers: [
+              { qty: 1, unit: "sack", pricePerUnitRm: 95 },
+              { qty: 5, unit: "sack", pricePerUnitRm: 78 },
+              { qty: 10, unit: "sack", pricePerUnitRm: 72 },
+            ],
+            bulkDiscountDetected: true,
+          },
+        },
+      ],
+    },
+    // 3. Glyphosate Roundup — Lim's group buy that Pak Ali joined; consolidated PO sent
+    {
+      daysAgo: -8,
+      seq: 1,
+      inventoryItem: "Glyphosate 41% (Roundup)",
+      status: "po_sent",
+      supplierName: "Pertanian Selatan",
+      requestedQty: 1,
+      unit: "can",
+      linkedGroupBuyItemName: "Glyphosate 41% (5L can)",
+      trigger: "manual",
+      messages: [
+        {
+          role: "system",
+          daysAgo: -8,
+          content: "Restock request opened from inventory.",
+        },
+        {
+          role: "ai",
+          daysAgo: -8,
+          content:
+            "Pak Lim already started a Roundup group buy in Cameron Highlands (RM 88/can vs RM 110 solo). I've added you to it.",
+          attachments: {
+            kind: "group_buy_proposal",
+            itemName: "Glyphosate 41% (5L can)",
+            targetTotalQty: 4,
+            unit: "can",
+            bulkPricePerUnitRm: 88,
+            individualPriceRm: 110,
+            minParticipants: 4,
+            supplierName: "Pertanian Selatan",
+            closesAtIso: tsOff(-2),
+            pitch: "Joined Pak Lim's Roundup group buy — RM 22 saving per can.",
+          },
+        },
+        {
+          role: "system",
+          daysAgo: -8,
+          content: "Group buy joined",
+          attachments: { kind: "status_change", from: "draft", to: "group_buy_live" },
+        },
+        {
+          role: "ai",
+          daysAgo: -2,
+          content:
+            "Group buy PO: 4 farmers, RM 352 total. Tap \"Generate PO PDF\" — I'll create it, you copy the message and send to Pertanian Selatan.",
+          attachments: {
+            kind: "consolidated_po_draft",
+            groupBuyId: gbRoundRow?.id ?? "00000000-0000-0000-0000-000000000000",
+            itemSummary: [
+              { itemName: "Glyphosate 41% (5L can)", totalQuantity: 4, unit: "can", pricePerUnitRm: 88 },
+              { itemName: "Sticker / wetting agent (1L)", totalQuantity: 0, unit: "bottle", pricePerUnitRm: 19 },
+            ],
+            grandTotalRm: 352,
+            copyToClipboardMessage:
+              "Salam tuan Pertanian Selatan,\n\nKami nak confirm order group buy:\n- Glyphosate 41% (5L can): 4 can @ RM 88.00/can\n\nTotal: RM 352.00 untuk 4 orang petani.\n\nDeliveries to 4 farms:\n1. Lot 224 Sungai Ruil (Pak Ali)\n2. Lim Family Farm\n3. Kebun Pak Hassan\n4. Kebun Mak Cik Salmah\n\nBoleh tuan confirm + bagi tarikh delivery? Terima kasih.\n\n[Pak Lim]",
+            deliveryInstructions:
+              "Deliveries to 4 farms:\n1. Lot 224 Sungai Ruil (Pak Ali)\n2. Lim Family Farm\n3. Kebun Pak Hassan\n4. Kebun Mak Cik Salmah",
+          },
+        },
+        {
+          role: "system",
+          daysAgo: -2,
+          content: "Consolidated PO PDF generated",
+          attachments: { kind: "status_change", from: "group_buy_live", to: "po_sent" },
+        },
+      ],
+      documents: [
+        {
+          kind: "po",
+          fileName: "PO-RR-DEMO-0003.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 27840,
+          daysAgo: -2,
+        },
+      ],
+    },
+    // 4. Urea — fully closed, goods received + paid (drives the books trail)
+    {
+      daysAgo: -14,
+      seq: 1,
+      inventoryItem: "Urea",
+      status: "closed",
+      supplierName: "Kedai Pertanian Ah Kow",
+      requestedQty: 4,
+      unit: "bag",
+      totalValueRm: 128,
+      linkedGroupBuyItemName: "Urea (10kg bag)",
+      trigger: "manual",
+      closedDaysAgo: -1,
+      messages: [
+        {
+          role: "system",
+          daysAgo: -14,
+          content: "Restock request opened from inventory.",
+        },
+        {
+          role: "ai",
+          daysAgo: -14,
+          content:
+            "Drafted RFQ for 4 bag Urea (with bulk tiers). I'll generate the PDF for you.",
+          attachments: {
+            kind: "rfq_draft",
+            itemName: "Urea",
+            requestedQuantity: 4,
+            unit: "bag",
+            quantityTiers: [
+              { qty: 1, label: "Just for me" },
+              { qty: 4, label: "Group of 4 farmers" },
+              { qty: 8, label: "Group of 8 farmers" },
+            ],
+            supplierName: "Kedai Pertanian Ah Kow",
+            copyToClipboardMessage:
+              "Salam tuan, harga urea 10kg untuk 1 / 4 / 8 bag? Terima kasih. [Pak Ali]",
+          },
+        },
+        {
+          role: "ai",
+          daysAgo: -10,
+          content:
+            "Got the supplier's reply. 16% saving at 4 bags — let's do a group buy.",
+          attachments: {
+            kind: "supplier_quote_parsed",
+            vendorName: "Kedai Pertanian Ah Kow",
+            tiers: [
+              { qty: 1, unit: "bag", pricePerUnitRm: 38 },
+              { qty: 4, unit: "bag", pricePerUnitRm: 32 },
+            ],
+            bulkDiscountDetected: true,
+            bulkDiscountReasoning: "16% off at 4+ bags",
+          },
+        },
+        {
+          role: "ai",
+          daysAgo: -3,
+          content: "PO drafted + sent. Goods due tomorrow.",
+          attachments: {
+            kind: "consolidated_po_draft",
+            groupBuyId: gbByItemName.get("Urea (10kg bag)")?.id ?? "00000000-0000-0000-0000-000000000000",
+            itemSummary: [
+              { itemName: "Urea (10kg bag)", totalQuantity: 4, unit: "bag", pricePerUnitRm: 32 },
+            ],
+            grandTotalRm: 128,
+            copyToClipboardMessage:
+              "Salam tuan Ah Kow,\n\nConfirm group buy urea 10kg: 4 bag @ RM 32 = RM 128 total. Pickup di kedai esok pagi. Terima kasih. [Pak Ali]",
+            deliveryInstructions: "Shared pickup at Kedai Pertanian Ah Kow, Brinchang.",
+          },
+        },
+        {
+          role: "farmer",
+          daysAgo: -1,
+          content: "Marked 1 item as received. Posted to Books — Accounts Payable now reflects this purchase.",
+        },
+        {
+          role: "system",
+          daysAgo: -1,
+          content: "Goods received + journal posted",
+          attachments: { kind: "status_change", from: "po_sent", to: "closed" },
+        },
+        {
+          role: "farmer",
+          daysAgo: -1,
+          content: "Marked supplier paid: RM 128.00 to Kedai Pertanian Ah Kow. Cash decreased + AP cleared in Books.",
+        },
+      ],
+      documents: [
+        { kind: "rfq", fileName: "RFQ-RR-DEMO-0004.pdf", mimeType: "application/pdf", sizeBytes: 17222, daysAgo: -14 },
+        { kind: "po", fileName: "PO-RR-DEMO-0004.pdf", mimeType: "application/pdf", sizeBytes: 22118, daysAgo: -3 },
+        { kind: "grn", fileName: "GRN-RR-DEMO-0004.txt", mimeType: "text/plain", sizeBytes: 412, daysAgo: -1 },
+      ],
+    },
+    // 5. Chilli seedling tray — fresh today, draft state (no RFQ yet)
+    {
+      daysAgo: 0,
+      seq: 1,
+      inventoryItem: "Chilli seed (MC11)",
+      status: "draft",
+      supplierName: "Mardi Direct",
+      trigger: "manual",
+      messages: [
+        {
+          role: "system",
+          daysAgo: 0,
+          content: "Restock request opened from inventory.",
+        },
+      ],
+    },
+    // 6. Mancozeb — earlier purchase, fully closed (drives older book entries)
+    {
+      daysAgo: -49,
+      seq: 1,
+      inventoryItem: "Mancozeb 80% WP",
+      status: "closed",
+      supplierName: "Kedai Pertanian Ah Kow",
+      requestedQty: 2,
+      unit: "kg",
+      totalValueRm: 24,
+      trigger: "manual",
+      closedDaysAgo: -47,
+      messages: [
+        { role: "system", daysAgo: -49, content: "Restock request opened from inventory." },
+        {
+          role: "ai",
+          daysAgo: -49,
+          content: "Drafted RFQ for 2 kg Mancozeb 80% WP. Sent to Ah Kow on WhatsApp.",
+          attachments: {
+            kind: "rfq_draft",
+            itemName: "Mancozeb 80% WP",
+            requestedQuantity: 2,
+            unit: "kg",
+            quantityTiers: [{ qty: 2, label: "Just for me" }],
+            supplierName: "Kedai Pertanian Ah Kow",
+            copyToClipboardMessage: "Salam tuan, 2 kg Mancozeb berapa? [Pak Ali]",
+          },
+        },
+        {
+          role: "farmer",
+          daysAgo: -48,
+          content: "Quoted RM 12/kg, total RM 24. Already collected from kedai semalam.",
+        },
+        {
+          role: "system",
+          daysAgo: -47,
+          content: "Goods received + journal posted",
+          attachments: { kind: "status_change", from: "po_sent", to: "closed" },
+        },
+      ],
+      documents: [
+        { kind: "rfq", fileName: "RFQ-RR-OLD-0001.pdf", mimeType: "application/pdf", sizeBytes: 16884, daysAgo: -49 },
+      ],
+    },
+  ];
+
+  let restockRequestCount = 0;
+  let restockMessageCount = 0;
+  let restockDocumentCount = 0;
+  for (const seed of restockSeeds) {
+    const itemId = itemByName.get(seed.inventoryItem);
+    if (!itemId) continue;
+    const linkedGroupBuyId = seed.linkedGroupBuyItemName
+      ? gbByItemName.get(seed.linkedGroupBuyItemName)?.id
+      : null;
+
+    const { data: req } = await supabase
+      .from("restock_requests")
+      .insert({
+        farm_id: demoFarmId,
+        user_id: demoUserId,
+        inventory_item_id: itemId,
+        case_ref: refForDay(seed.daysAgo, seed.seq),
+        status: seed.status,
+        supplier_name: seed.supplierName ?? null,
+        group_buy_id: linkedGroupBuyId ?? null,
+        total_value_rm: seed.totalValueRm ?? null,
+        requested_quantity: seed.requestedQty ?? null,
+        unit: seed.unit ?? null,
+        opened_at: tsOff(seed.daysAgo),
+        closed_at: seed.closedDaysAgo != null ? tsOff(seed.closedDaysAgo) : null,
+      })
+      .select("id")
+      .single();
+    if (!req) continue;
+    restockRequestCount += 1;
+
+    if (seed.messages.length > 0) {
+      const msgPayload = seed.messages.map((m) => ({
+        restock_request_id: req.id,
+        farm_id: demoFarmId,
+        role: m.role,
+        content: m.content,
+        attachments: m.attachments ?? null,
+        created_at: tsOff(m.daysAgo),
+      }));
+      await supabase.from("restock_chat_messages").insert(msgPayload);
+      restockMessageCount += msgPayload.length;
+    }
+
+    if (seed.documents && seed.documents.length > 0) {
+      const docPayload = seed.documents.map((d) => ({
+        restock_request_id: req.id,
+        farm_id: demoFarmId,
+        kind: d.kind,
+        // Storage path is fictitious — the demo PDFs aren't actually
+        // uploaded; the documents tab still surfaces the metadata.
+        storage_path: `${demoUserId}/${req.id}/${d.kind}/${d.fileName}`,
+        file_name: d.fileName,
+        mime_type: d.mimeType,
+        size_bytes: d.sizeBytes,
+        parsed_data: d.parsedData ?? null,
+        created_at: tsOff(d.daysAgo),
+      }));
+      await supabase.from("restock_documents").insert(docPayload);
+      restockDocumentCount += docPayload.length;
+    }
+  }
+
+  // ── C. Full accounting trail ───────────────────────────────────
+  //
+  // The chart of accounts was auto-seeded by the AFTER INSERT trigger
+  // when we created demoFarm above. We resolve every account by code
+  // into a Map, then post backdated journal entries that mirror the
+  // farm's real history.
+  const { data: accountRows } = await supabase
+    .from("accounts")
+    .select("id, code")
+    .eq("farm_id", demoFarmId);
+  const accountIdByCode = new Map(
+    (accountRows ?? []).map((a) => [a.code as string, a.id as string])
+  );
+  const acc = (code: string): string => {
+    const id = accountIdByCode.get(code);
+    if (!id) throw new Error(`Demo seed: account ${code} not seeded for demo farm`);
+    return id;
+  };
+
+  // Helper: insert one journal entry with its lines. Validates balance
+  // up-front so a typo in the seed doesn't silently land an unbalanced
+  // entry in the Books.
+  type JLine = {
+    accountCode: string;
+    debit?: number;
+    credit?: number;
+    description?: string;
+  };
+  let journalEntryCount = 0;
+  let journalLineCount = 0;
+  async function postJournal(args: {
+    daysAgo: number;
+    sourceKind:
+      | "restock_grn"
+      | "restock_payment"
+      | "diagnosis_treatment"
+      | "sale"
+      | "inventory_wastage"
+      | "manual";
+    reference: string;
+    description?: string;
+    supplierName?: string;
+    sourceId?: string;
+    lines: JLine[];
+  }) {
+    const debits = args.lines.reduce((s, l) => s + (l.debit ?? 0), 0);
+    const credits = args.lines.reduce((s, l) => s + (l.credit ?? 0), 0);
+    if (Math.abs(debits - credits) > 0.005) {
+      throw new Error(
+        `Demo seed journal unbalanced (${args.reference}): debits=${debits.toFixed(2)} credits=${credits.toFixed(2)}`
+      );
+    }
+    const postedAt = (() => {
+      const d = new Date(today);
+      d.setDate(d.getDate() + args.daysAgo);
+      return d.toISOString().slice(0, 10);
+    })();
+    const { data: header } = await supabase
+      .from("journal_entries")
+      .insert({
+        farm_id: demoFarmId,
+        posted_at: postedAt,
+        reference: args.reference,
+        description: args.description ?? null,
+        source_kind: args.sourceKind,
+        source_id: args.sourceId ?? null,
+        supplier_name: args.supplierName ?? null,
+        total_rm: debits,
+        created_by: demoUserId,
+        created_at: tsOff(args.daysAgo),
+      })
+      .select("id")
+      .single();
+    if (!header) return;
+    journalEntryCount += 1;
+    const linesPayload = args.lines.map((l) => ({
+      journal_entry_id: header.id,
+      farm_id: demoFarmId,
+      account_id: acc(l.accountCode),
+      debit_rm: l.debit ?? 0,
+      credit_rm: l.credit ?? 0,
+      description: l.description ?? null,
+    }));
+    await supabase.from("journal_entry_lines").insert(linesPayload);
+    journalLineCount += linesPayload.length;
+  }
+
+  // 1. Initial owner equity — seed money the farmer started the season with
+  await postJournal({
+    daysAgo: -90,
+    sourceKind: "manual",
+    reference: "Opening capital",
+    description: "Season-opening cash injection from savings",
+    lines: [
+      { accountCode: "1100", debit: 2000, description: "Cash on hand" },
+      { accountCode: "3100", credit: 2000, description: "Owner contributed capital" },
+    ],
+  });
+
+  // 2. GRNs — one journal per historical purchase movement.
+  const purchaseGrns: Array<{
+    daysAgo: number;
+    supplier: string;
+    invCode: string;
+    amount: number;
+    desc: string;
+    paid?: boolean; // true = also create the payment entry alongside
+  }> = [
+    { daysAgo: -60, supplier: "Pertanian Selatan",                 invCode: "1230", amount: 145.0, desc: "1 unit Knapsack sprayer 16L", paid: true },
+    { daysAgo: -50, supplier: "Mardi Direct",                      invCode: "1220", amount: 15.0,  desc: "0.25 kg Chilli seed (MC11)", paid: true },
+    { daysAgo: -49, supplier: "Kedai Pertanian Ah Kow",            invCode: "1210", amount: 24.0,  desc: "2 kg Mancozeb 80% WP" },
+    { daysAgo: -40, supplier: "Kedai Pertanian Ah Kow",            invCode: "1200", amount: 112.5, desc: "25 kg NPK 15-15-15", paid: true },
+    { daysAgo: -30, supplier: "Pertanian Selatan",                 invCode: "1200", amount: 35.0,  desc: "10 kg Urea" },
+    { daysAgo: -25, supplier: "Kedai Pertanian Ah Kow",            invCode: "1200", amount: 26.0,  desc: "5 kg TSP" },
+    { daysAgo: -15, supplier: "Kedai Pertanian Sungai Ruil",       invCode: "1210", amount: 28.0,  desc: "1 kg Antracol 70% WP" },
+    { daysAgo: -15, supplier: "Kedai Pertanian Sungai Ruil",       invCode: "1210", amount: 44.0,  desc: "2 L Glyphosate 41% (Roundup)" },
+  ];
+  for (const g of purchaseGrns) {
+    await postJournal({
+      daysAgo: g.daysAgo,
+      sourceKind: "restock_grn",
+      reference: `GRN — ${g.supplier}`,
+      description: g.desc,
+      supplierName: g.supplier,
+      lines: [
+        { accountCode: g.invCode, debit: g.amount, description: g.desc },
+        { accountCode: "2100", credit: g.amount, description: g.supplier },
+      ],
+    });
+    if (g.paid) {
+      // Pay the invoice the same day (cash sale through the kedai)
+      await postJournal({
+        daysAgo: g.daysAgo,
+        sourceKind: "restock_payment",
+        reference: `Payment — ${g.supplier}`,
+        description: `Paid ${g.supplier} RM ${g.amount.toFixed(2)}`,
+        supplierName: g.supplier,
+        lines: [
+          { accountCode: "2100", debit: g.amount, description: g.supplier },
+          { accountCode: "1100", credit: g.amount, description: "Cash" },
+        ],
+      });
+    }
+  }
+
+  // 3. Urea group buy — closed, goods received + paid (mirror RR-DEMO-0004)
+  await postJournal({
+    daysAgo: -1,
+    sourceKind: "restock_grn",
+    reference: "GRN — Urea group buy",
+    description: "4 bag Urea (10kg) at bulk RM 32",
+    supplierName: "Kedai Pertanian Ah Kow",
+    lines: [
+      { accountCode: "1200", debit: 128.0, description: "4 bag Urea (10kg)" },
+      { accountCode: "2100", credit: 128.0, description: "Kedai Pertanian Ah Kow" },
+    ],
+  });
+  await postJournal({
+    daysAgo: -1,
+    sourceKind: "restock_payment",
+    reference: "Payment — Urea group buy",
+    description: "Settled Ah Kow for the urea consolidated PO",
+    supplierName: "Kedai Pertanian Ah Kow",
+    lines: [
+      { accountCode: "2100", debit: 128.0, description: "Kedai Pertanian Ah Kow" },
+      { accountCode: "1100", credit: 128.0, description: "Cash on hand" },
+    ],
+  });
+
+  // 4. Treatment costs — pull from confirmed diagnoses
+  const treatmentCosts: Array<{ daysAgo: number; ref: string; desc: string; cost: number }> = [
+    { daysAgo: -42, ref: "Treatment — Bacterial Blight", desc: "Plot B paddy, copper-based spray",         cost: 18.0 },
+    { daysAgo: -28, ref: "Treatment — Cercospora",       desc: "Plot A chilli, Mancozeb at 0.4 kg",        cost: 4.8 },
+    { daysAgo: -12, ref: "Treatment — Anthracnose",      desc: "Plot A chilli, Mancozeb at 0.6 kg",        cost: 7.2 },
+    { daysAgo: -10, ref: "Treatment — Sigatoka prevent.", desc: "Plot D banana, Antracol at 0.6 kg",       cost: 16.8 },
+  ];
+  for (const t of treatmentCosts) {
+    await postJournal({
+      daysAgo: t.daysAgo,
+      sourceKind: "diagnosis_treatment",
+      reference: t.ref,
+      description: t.desc,
+      lines: [
+        { accountCode: "5100", debit: t.cost, description: t.desc },
+        { accountCode: "1210", credit: t.cost, description: "Pesticide drawn from inventory" },
+      ],
+    });
+  }
+
+  // 5. Sales — post the chilli + paddy + kangkung sales as cash receipts.
+  //    (Maps roughly to the farmer_sales rows but uses round numbers.)
+  const salePostings: Array<{ daysAgo: number; crop: string; qty: number; price: number; method?: "cash" | "bank" }> = [
+    { daysAgo: -56, crop: "chilli",   qty: 8.0,   price: 3.50, method: "cash" },
+    { daysAgo: -49, crop: "chilli",   qty: 11.0,  price: 3.60, method: "cash" },
+    { daysAgo: -42, crop: "chilli",   qty: 14.0,  price: 3.90, method: "cash" },
+    { daysAgo: -35, crop: "chilli",   qty: 12.0,  price: 4.00, method: "cash" },
+    { daysAgo: -28, crop: "chilli",   qty: 16.0,  price: 4.10, method: "cash" },
+    { daysAgo: -21, crop: "chilli",   qty: 12.0,  price: 3.80, method: "cash" },
+    { daysAgo: -14, crop: "chilli",   qty: 15.0,  price: 4.00, method: "cash" },
+    { daysAgo: -10, crop: "chilli",   qty: 5.0,   price: 5.00, method: "bank" },
+    { daysAgo: -7,  crop: "chilli",   qty: 10.0,  price: 3.90, method: "cash" },
+    { daysAgo: -60, crop: "paddy",    qty: 1100.0, price: 2.55, method: "bank" },
+    { daysAgo: -14, crop: "kangkung", qty: 6.0,   price: 1.80, method: "cash" },
+    { daysAgo: -7,  crop: "kangkung", qty: 8.0,   price: 2.00, method: "cash" },
+  ];
+  for (const s of salePostings) {
+    const total = Math.round(s.qty * s.price * 100) / 100;
+    const dr = s.method === "bank" ? "1110" : "1100";
+    await postJournal({
+      daysAgo: s.daysAgo,
+      sourceKind: "sale",
+      reference: `Sale: ${s.qty} kg ${s.crop}`,
+      description: `Sold ${s.qty} kg ${s.crop} @ RM ${s.price.toFixed(2)}/kg`,
+      lines: [
+        { accountCode: dr, debit: total, description: `${s.qty} kg ${s.crop}` },
+        { accountCode: "4100", credit: total, description: `${s.crop} sales revenue` },
+      ],
+    });
+  }
+
+  // 6. Wastage — a little Mancozeb expired in storage
+  await postJournal({
+    daysAgo: -20,
+    sourceKind: "inventory_wastage",
+    reference: "Wastage — expired Mancozeb",
+    description: "0.1 kg Mancozeb past its shelf life — written off",
+    lines: [
+      { accountCode: "5300", debit: 1.2, description: "Wasted Mancozeb (0.1 kg)" },
+      { accountCode: "1210", credit: 1.2, description: "Inventory written off" },
+    ],
+  });
+
   return {
     demoFarmId,
     neighbourFarmId: hassanFarmId,
@@ -777,5 +1622,11 @@ export async function seedDemoData(
     movementsCount: movements.length,
     tasksCount: tasks.length,
     plotEventsCount: plotEvents.length,
+    restockRequestCount,
+    restockMessageCount,
+    restockDocumentCount,
+    groupBuyItemCount,
+    journalEntryCount,
+    journalLineCount,
   };
 }
