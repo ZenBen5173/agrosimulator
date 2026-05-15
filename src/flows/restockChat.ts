@@ -234,28 +234,68 @@ Extract every quantity / price tier the supplier offered for this item. If multi
 
 // ─── 1b. Conversational reply to a free-text farmer message ────
 //
-// Powers the chatbot loop: farmer types something into the compose bar,
-// we save it, then we call this flow to generate a contextual AI reply
-// that's saved as the next message. The AI sees the chat history + the
-// restock context + the new message and replies conversationally,
-// often pointing at one of the inline action buttons.
+// Powers the agentic chatbot loop. When the farmer types something:
+//   - if it's a question or comment, AI answers conversationally (text only)
+//   - if it's a REQUEST TO CHANGE THE DOCUMENT (e.g. "change to 8 sacks",
+//     "use Ah Kow instead"), AI emits a structured `action` so the route
+//     handler can re-run draftRfqFlow with the overrides + post a fresh
+//     rfq_draft message that the farmer can act on
+//
+// Today the only mutating action is `redraft_rfq` (the highest-leverage
+// one — every other stage's documents are derived from this). Adding
+// more (regenerate consolidated PO with overrides, change supplier on
+// a PO, etc.) is a matter of extending the discriminated union.
+
+const FarmerActionSchema = z.discriminatedUnion("kind", [
+  // Plain text reply, no follow-up action.
+  z.object({ kind: z.literal("none") }),
+  // Re-draft the RFQ with optional overrides. Either field unset =
+  // keep the current value. The route handler executes draftRfqFlow
+  // with these overrides and appends a new rfq_draft message.
+  z.object({
+    kind: z.literal("redraft_rfq"),
+    quantityOverride: z
+      .number()
+      .positive()
+      .optional()
+      .describe("New requested quantity. Omit to keep the current."),
+    supplierOverride: z
+      .string()
+      .optional()
+      .describe("New supplier name. Omit to keep the current."),
+    reasonForChange: z
+      .string()
+      .optional()
+      .describe("One short phrase the farmer used (for the chat narrative)."),
+  }),
+]);
 
 const FarmerReplySchema = z.object({
   reply: z.string(),
+  /** Optional structured side-effect for the route handler to execute. */
+  action: FarmerActionSchema.optional(),
 });
 
 export type FarmerReply = z.infer<typeof FarmerReplySchema>;
 
-const REPLY_SYSTEM = `You are a Malaysian smallholder farmer's supply-chain assistant inside a chat thread for ONE specific restock request. The farmer just sent you a free-text message.
+const REPLY_SYSTEM = `You are a Malaysian smallholder farmer's supply-chain assistant inside a chat thread for ONE specific restock request. The farmer just sent you a free-text message — you reply like WhatsApp.
 
-ABSOLUTE RULES:
-1. Reply in 1-3 short sentences. No lists, no headers, no markdown — this is WhatsApp-style chat.
-2. Tone: warm, practical, BM-leaning (mix BM + English freely the way Malaysian smallholders actually text).
-3. If the farmer is asking what to do next, point them at the right inline action button by NAME (e.g. "Tap 'Download RFQ PDF' lepas tu hantar pada Ah Kow.").
-4. If they're sharing an update ("dah hantar ke supplier"), acknowledge + name the next step.
-5. If they ask a side question (price, when supplier usually replies, etc.), answer briefly using the context.
-6. Never invent prices, supplier names, or quantities not given in the context.
-7. Output JSON only.`;
+REPLY STYLE:
+1. 1-3 short sentences. No lists, no headers, no markdown.
+2. Warm, practical, BM-leaning (mix BM + English the way real Malaysian smallholders text).
+3. If pointing at an inline button, name it in quotes (e.g. "Tap 'Download RFQ PDF' lepas tu hantar pada Ah Kow.").
+4. Never invent prices, supplier names, or quantities the context didn't give you.
+
+WHEN TO EMIT AN ACTION (vs. text-only reply):
+- The farmer asks to CHANGE the RFQ quantity ("buat 8 sacks", "change to 12 kg", "tambah jadi 10 sack") -> emit action { kind: "redraft_rfq", quantityOverride: <number> }
+- The farmer asks to CHANGE the supplier ("hantar pada Hassan instead", "guna Pertanian Selatan", "switch supplier") -> emit action { kind: "redraft_rfq", supplierOverride: "<name as written>" }
+- BOTH at once -> one action with both fields
+- Anything else (questions, status updates, casual chat, "ok thanks", "supplier dah balas") -> action: { kind: "none" } OR omit action entirely
+
+WHEN YOU EMIT redraft_rfq:
+- Your reply text should ACKNOWLEDGE the change BRIEFLY ("Updating to 8 sacks now…") so the farmer knows you heard them. The new draft will appear as the next message automatically.
+
+Output JSON matching the schema. No prose outside the JSON.`;
 
 export const replyToFarmerFlow = ai.defineFlow(
   {
@@ -263,6 +303,8 @@ export const replyToFarmerFlow = ai.defineFlow(
     inputSchema: z.object({
       farmerMessage: z.string(),
       itemName: z.string(),
+      itemUnit: z.string().optional(),
+      currentRequestedQty: z.number().optional(),
       status: z.string(),
       supplierName: z.string().optional(),
       recentMessages: z.array(
@@ -288,7 +330,7 @@ export const replyToFarmerFlow = ai.defineFlow(
         case "draft":
           return "No RFQ drafted yet. Action available: 'Draft RFQ for me'.";
         case "awaiting_supplier":
-          return "RFQ drafted, supplier hasn't replied yet. Actions available: 'Download RFQ PDF', 'Upload supplier reply', 'Paste reply text'.";
+          return "RFQ drafted, supplier hasn't replied yet. Actions available: 'Download RFQ PDF', 'Upload supplier reply', 'Paste reply text'. The RFQ can still be re-drafted if the farmer asks for changes.";
         case "quote_received":
           return "Supplier quoted with a bulk discount. Action available: 'Start a group buy'.";
         case "group_buy_live":
@@ -302,10 +344,16 @@ export const replyToFarmerFlow = ai.defineFlow(
       }
     })();
 
+    const qtyHint =
+      input.currentRequestedQty != null
+        ? `Current requested quantity: ${input.currentRequestedQty}${input.itemUnit ? ` ${input.itemUnit}` : ""}`
+        : "";
+
     const prompt = `RESTOCK CONTEXT
 Item: ${input.itemName}
 Status: ${input.status}
 Supplier: ${input.supplierName ?? "(none on file)"}
+${qtyHint}
 ${stageHint}
 
 RECENT CONVERSATION
@@ -314,7 +362,7 @@ ${history}
 FARMER'S NEW MESSAGE
 ${input.farmerMessage}
 
-Reply conversationally. Output JSON only.`;
+Reply conversationally. Emit an action ONLY if the farmer is requesting a change to the RFQ. Output JSON only.`;
 
     try {
       const { output } = await ai.generate({
@@ -322,7 +370,7 @@ Reply conversationally. Output JSON only.`;
         system: REPLY_SYSTEM,
         prompt,
         output: { schema: FarmerReplySchema },
-        config: { temperature: 0.65 },
+        config: { temperature: 0.55 },
       });
 
       if (output?.reply && output.reply.trim().length > 0) {
@@ -333,7 +381,25 @@ Reply conversationally. Output JSON only.`;
     }
 
     // Deterministic fallback so the chat never goes silent on a model
-    // failure. Mirrors the workflow stage so we still help the farmer.
+    // failure. Best-effort intent detection on the farmer's text so we
+    // can still trigger a redraft for the most common patterns.
+    const text = input.farmerMessage.toLowerCase();
+    const qtyMatch = text.match(
+      /(\d+(?:\.\d+)?)\s*(?:kg|sack|sacks|bag|bags|packet|packets|can|cans|unit|units|bottle|bottles|kotak)?/
+    );
+    const wantsChange =
+      /change|tukar|tambah|jadi|buat|increase|decrease|kurang/.test(text);
+    if (wantsChange && qtyMatch && qtyMatch[1]) {
+      const newQty = Number(qtyMatch[1]);
+      return {
+        reply: `OK, updating to ${newQty}${input.itemUnit ? ` ${input.itemUnit}` : ""}…`,
+        action: {
+          kind: "redraft_rfq" as const,
+          quantityOverride: newQty,
+        },
+      };
+    }
+
     const fallback =
       input.status === "draft"
         ? "Tap 'Draft RFQ for me' kalau nak saya start."

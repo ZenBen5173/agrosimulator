@@ -209,18 +209,26 @@ export async function POST(request: Request) {
         //    message is already persisted, so a Gemini failure here just
         //    means the chat doesn't auto-reply this turn.
         let aiMsg: typeof farmerMsg | null = null;
+        let actionMsg: typeof farmerMsg | null = null;
         try {
-          // Pull the chat history + the inventory item name for context
+          // Pull the chat history + the inventory item details for context
           const recent = await listMessages(supabase, req.id);
           const { data: itemRow } = await supabase
             .from("inventory_items")
-            .select("item_name")
+            .select("item_name, item_type, current_quantity, reorder_quantity, unit, supplier_name")
             .eq("id", req.inventoryItemId)
             .maybeSingle();
 
           const reply = await replyToFarmerFlow({
             farmerMessage: body.content,
             itemName: itemRow?.item_name ?? "this item",
+            itemUnit: itemRow?.unit ?? req.unit ?? undefined,
+            currentRequestedQty:
+              req.requestedQuantity != null
+                ? Number(req.requestedQuantity)
+                : itemRow?.reorder_quantity != null
+                  ? Number(itemRow.reorder_quantity)
+                  : undefined,
             status: req.status,
             supplierName: req.supplierName ?? undefined,
             recentMessages: recent.map((m) => ({
@@ -237,11 +245,72 @@ export async function POST(request: Request) {
               content: reply.reply.trim(),
             });
           }
+
+          // 3. Dispatch any structured action the AI emitted. Today the
+          //    only one is redraft_rfq — re-runs draftRfqFlow with the
+          //    farmer's requested overrides + appends a fresh rfq_draft
+          //    message so the new buttons (with the new quantity) show
+          //    up inline. The chat thread now visibly tells the story:
+          //    farmer asked, AI confirmed, AI posted the new draft.
+          if (reply.action?.kind === "redraft_rfq" && itemRow) {
+            const newQty =
+              reply.action.quantityOverride ??
+              (req.requestedQuantity != null
+                ? Number(req.requestedQuantity)
+                : Number(itemRow.reorder_quantity ?? 1));
+            const newSupplier =
+              reply.action.supplierOverride ??
+              req.supplierName ??
+              itemRow.supplier_name ??
+              undefined;
+
+            const { data: farm } = await supabase
+              .from("farms")
+              .select("district")
+              .eq("id", req.farmId)
+              .maybeSingle();
+
+            const draft = await draftRfqFlow({
+              itemName: itemRow.item_name,
+              itemType: itemRow.item_type ?? undefined,
+              currentQuantity: Number(itemRow.current_quantity ?? 0),
+              reorderQuantity: newQty,
+              unit: itemRow.unit ?? "unit",
+              lastSupplierName: newSupplier,
+              farmDistrict: farm?.district ?? undefined,
+            });
+
+            await updateRequestMetadata(supabase, req.id, {
+              requestedQuantity: draft.recommendedQuantity,
+              unit: draft.unit,
+              supplierName: newSupplier,
+            });
+
+            actionMsg = await appendMessage(supabase, {
+              restockRequestId: req.id,
+              farmId: req.farmId,
+              role: "ai",
+              content: `Updated RFQ — ${draft.summary}. New buttons below to download or share with ${newSupplier ?? "your supplier"}.`,
+              attachments: {
+                kind: "rfq_draft",
+                itemName: itemRow.item_name,
+                requestedQuantity: draft.recommendedQuantity,
+                unit: draft.unit,
+                quantityTiers: draft.quantityTiers,
+                supplierName: newSupplier ?? undefined,
+                copyToClipboardMessage: draft.copyToClipboardMessage,
+              },
+            });
+          }
         } catch (err) {
-          console.warn("AI reply skipped:", err);
+          console.warn("AI reply / action skipped:", err);
         }
 
-        return NextResponse.json({ message: farmerMsg, aiReply: aiMsg });
+        return NextResponse.json({
+          message: farmerMsg,
+          aiReply: aiMsg,
+          aiAction: actionMsg,
+        });
       }
 
       case "upload_quote": {
