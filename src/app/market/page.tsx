@@ -1,33 +1,24 @@
 "use client";
 
 /**
- * AgroSim 2.0 — Pact layer surface.
+ * AgroSim 2.1 — Market prices surface.
  *
- * Three sections:
+ * Two sections:
  *   1. Anonymous district price benchmark — the killer line
- *   2. Open group buys in your district + "Start one" button
- *   3. Log a sale (feeds the benchmark for everyone)
+ *   2. Log a sale (feeds the benchmark for everyone)
  *
- * Replaces the 1.0 market page (stock-market-style charts) which was
- * cut from the 2.0 spec.
+ * Group buys lived here in 2.0 but moved to /group-buy in 2.1 to live
+ * alongside the chat-to-action restock flow. See /api/group-buy and
+ * src/app/group-buy. Anyone hitting /market for group buys gets a
+ * pointer at the bottom of this page.
  */
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  TrendingUp,
-  Users,
-  ChevronRight,
-  Loader2,
-  Check,
-} from "lucide-react";
+import { ArrowLeft, TrendingUp, Users, Loader2 } from "lucide-react";
 import type { CropName } from "@/lib/diagnosis/types";
-import type {
-  GroupBuyStatus,
-  PriceBenchmarkResponse,
-} from "@/lib/pact/types";
+import type { PriceBenchmarkResponse } from "@/lib/pact/types";
 import { createClient } from "@/lib/supabase/client";
 
 const CROPS: { value: CropName; label: string }[] = [
@@ -58,8 +49,6 @@ export default function PactMarketPage() {
   const [farmerId, setFarmerId] = useState<string | null>(null);
   const [benchmark, setBenchmark] = useState<PriceBenchmarkResponse | null>(null);
   const [loadingBenchmark, setLoadingBenchmark] = useState(false);
-  const [groupBuys, setGroupBuys] = useState<GroupBuyStatus[]>([]);
-  const [loadingGroupBuys, setLoadingGroupBuys] = useState(false);
 
   // Try to read user's district from their farm row on mount
   useEffect(() => {
@@ -98,18 +87,6 @@ export default function PactMarketPage() {
     return () => { cancelled = true; };
   }, [crop, district, farmerId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoadingGroupBuys(true);
-    fetch(`/api/pact/group-buy?district=${encodeURIComponent(district)}`)
-      .then((r) => r.json())
-      .then((d) => { if (!cancelled) setGroupBuys(d.groupBuys ?? []); })
-      .catch(() => { if (!cancelled) setGroupBuys([]); })
-      .finally(() => { if (!cancelled) setLoadingGroupBuys(false); });
-    return () => { cancelled = true; };
-  }, [district]);
-
   return (
     <div className="min-h-screen bg-stone-50 pb-24">
       <header className="border-b border-stone-200 bg-white px-4 py-3">
@@ -118,9 +95,9 @@ export default function PactMarketPage() {
             <ArrowLeft size={18} className="text-stone-500" />
           </button>
           <div>
-            <h1 className="text-lg font-semibold text-stone-900">Co-op</h1>
+            <h1 className="text-lg font-semibold text-stone-900">Market prices</h1>
             <p className="text-[11px] leading-none text-stone-500">
-              Real prices, group buys, share what you sold.
+              Anonymous district benchmark · log what you sold.
             </p>
           </div>
         </div>
@@ -187,13 +164,14 @@ export default function PactMarketPage() {
           </section>
         )}
 
-        {/* ── Group buys (split: joined first, then joinable) ── */}
-        <GroupBuysSection
-          loading={loadingGroupBuys}
-          groupBuys={groupBuys}
-          district={district}
-          onStartNew={() => router.push("/pact/group-buys/new")}
-        />
+        {/* Group buys live on their own page now (chat-to-action flow). */}
+        <Link
+          href="/group-buy"
+          className="block rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center text-sm font-medium text-emerald-800 hover:border-emerald-400"
+        >
+          <Users size={16} className="mx-auto mb-1 text-emerald-700" />
+          Open group buys in {district}
+        </Link>
       </main>
     </div>
   );
@@ -206,72 +184,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
       {children}
     </p>
-  );
-}
-
-function GroupBuysSection({
-  loading,
-  groupBuys,
-  district,
-  onStartNew,
-}: {
-  loading: boolean;
-  groupBuys: GroupBuyStatus[];
-  district: string;
-  onStartNew: () => void;
-}) {
-  const joined = groupBuys.filter((g) => g.farmerCommitted);
-  const joinable = groupBuys.filter((g) => !g.farmerCommitted);
-
-  return (
-    <div className="space-y-8">
-      {loading && (
-        <div className="rounded-xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-500">
-          <Loader2 size={18} className="mr-2 inline-block animate-spin" />
-          Loading…
-        </div>
-      )}
-
-      {!loading && joined.length > 0 && (
-        <section>
-          <SectionLabel>You&apos;ve joined</SectionLabel>
-          <div className="space-y-2">
-            {joined.map((g) => (
-              <GroupBuyRow key={g.groupBuyId} g={g} variant="joined" />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!loading && (
-        <section>
-          <div className="mb-2 flex items-center justify-between px-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">
-              Open in {district}
-            </p>
-            <button
-              onClick={onStartNew}
-              className="text-xs font-medium text-emerald-700 hover:underline"
-            >
-              + Start one
-            </button>
-          </div>
-          {joinable.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-stone-300 bg-white p-6 text-center text-xs text-stone-500">
-              {joined.length > 0
-                ? "Nothing else open right now — start one and see who joins."
-                : "No open group buys in your district yet. Start one and see who joins."}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {joinable.map((g) => (
-                <GroupBuyRow key={g.groupBuyId} g={g} variant="open" />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-    </div>
   );
 }
 
@@ -310,63 +222,6 @@ function BenchmarkCard({
       <p className="text-sm leading-relaxed">{benchmark.message}</p>
       <p className="text-[11px] italic opacity-75">{benchmark.trustNote}</p>
     </section>
-  );
-}
-
-function GroupBuyRow({
-  g,
-  variant = "open",
-}: {
-  g: GroupBuyStatus;
-  variant?: "joined" | "open";
-}) {
-  const ratio = Math.min(1, g.participantsJoined / g.participantsTarget);
-  const isJoined = variant === "joined";
-
-  // Joined buys get an emerald-tinted card so they visually separate from
-  // joinable ones at a glance — matching the "you're in this" trust posture.
-  const cardClass = isJoined
-    ? "block rounded-xl border-2 border-emerald-300 bg-emerald-50/40 p-3 hover:border-emerald-500"
-    : "block rounded-xl border border-stone-200 bg-white p-3 hover:border-emerald-400";
-
-  return (
-    <Link href={`/pact/group-buys/${g.groupBuyId}`} className={cardClass}>
-      <div className="flex items-start justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-stone-900">{g.itemName}</p>
-          <p className="mt-0.5 text-xs text-stone-500">
-            Bulk RM {g.bulkPriceRm.toFixed(2)}/{g.unit}
-            <span className="text-stone-400">
-              {" "}
-              · alone RM {g.individualPriceRm.toFixed(2)}
-            </span>
-          </p>
-          <p className="mt-1 text-xs font-medium text-emerald-700">
-            Save RM {g.savingsRm.toFixed(2)}/{g.unit}
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1 text-xs text-stone-700">
-            <Users size={12} />
-            <span>
-              {g.participantsJoined}/{g.participantsTarget}
-            </span>
-          </div>
-          {isJoined && (
-            <span className="inline-flex items-center gap-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-medium text-white">
-              <Check size={10} /> Joined
-            </span>
-          )}
-          <ChevronRight size={14} className="text-stone-300" />
-        </div>
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-100">
-        <div
-          className={`h-full ${isJoined ? "bg-emerald-600" : "bg-emerald-400"}`}
-          style={{ width: `${Math.round(ratio * 100)}%` }}
-        />
-      </div>
-    </Link>
   );
 }
 
