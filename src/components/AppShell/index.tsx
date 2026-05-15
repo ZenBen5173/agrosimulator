@@ -13,6 +13,14 @@ const HIDE_TAB_PATTERNS = [
   "/onboarding",
 ];
 
+// Inside a chat thread we hide the global tab bar — the compose bar takes
+// the bottom slot and the back arrow handles navigation, same as WhatsApp,
+// Claude, and ChatGPT inside an open conversation.
+function isChatThread(pathname: string): boolean {
+  // /chats/<id> but NOT /chats (the inbox keeps the tab bar)
+  return /^\/chats\/[^/]+/.test(pathname);
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
@@ -20,7 +28,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname !== "/" &&
     !HIDE_TAB_PATTERNS.some(
       (p) => p !== "/" && pathname.startsWith(p)
-    );
+    ) &&
+    !isChatThread(pathname);
 
   return (
     <>
