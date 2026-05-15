@@ -495,7 +495,7 @@ export default function GroupBuyDetailPage(props: {
                           }),
                         });
                         if (groupBuy.restockRequestId) {
-                          router.push(`/restock/${groupBuy.restockRequestId}`);
+                          router.push(`/chats/${groupBuy.restockRequestId}`);
                           return;
                         }
                         await refetch();
@@ -532,7 +532,7 @@ export default function GroupBuyDetailPage(props: {
                 </p>
                 {groupBuy.restockRequestId && (
                   <Link
-                    href={`/restock/${groupBuy.restockRequestId}`}
+                    href={`/chats/${groupBuy.restockRequestId}`}
                     className="inline-flex items-center gap-1 text-emerald-700 font-medium hover:underline"
                   >
                     <Sparkles size={12} />

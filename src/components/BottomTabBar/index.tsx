@@ -6,21 +6,24 @@ import { motion } from "framer-motion";
 import {
   CalendarCheck,
   Stethoscope,
-  Users,
+  MessageCircle,
   BookOpen,
   Plus,
 } from "lucide-react";
 import FabMenu from "./FabMenu";
 
-// AgroSim 2.0 navigation. Three layers of the spec → three primary tabs
-// flanking the FAB; Today is the home base.
+// AgroSim 2.1 navigation: Today / Inspect / FAB / Chats / Inventory.
+// "Chats" replaces the old Co-op tab — Market price-check is still
+// available via the FAB so we don't lose anything, and the chat-to-
+// action loop now has a primary nav entry. Group Buys + Books also live
+// in the FAB.
 const LEFT_TABS = [
   { key: "home", label: "Today", icon: CalendarCheck, href: "/home" },
   { key: "care", label: "Inspect", icon: Stethoscope, href: "/inspection/v2" },
 ];
 
 const RIGHT_TABS = [
-  { key: "pact", label: "Co-op", icon: Users, href: "/market" },
+  { key: "chats", label: "Chats", icon: MessageCircle, href: "/chats" },
   { key: "books", label: "Inventory", icon: BookOpen, href: "/inventory" },
 ];
 

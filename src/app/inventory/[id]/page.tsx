@@ -324,7 +324,7 @@ function RestockButton({ itemId, isLow }: { itemId: string; isLow: boolean }) {
         setError(data?.error ?? "Could not open restock chat.");
         return;
       }
-      router.push(`/restock/${data.restock.id}`);
+      router.push(`/chats/${data.restock.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {

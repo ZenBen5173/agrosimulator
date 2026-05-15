@@ -41,7 +41,7 @@ const FAB_GROUPS: { label: string; items: FabAction[] }[] = [
     label: "Supplies",
     items: [
       { key: "scan_receipt", label: "Scan Receipt", icon: Receipt, href: "/receipts", color: "bg-violet-500" },
-      { key: "restocks", label: "Restocks", icon: ShoppingCart, href: "/restock", color: "bg-emerald-600" },
+      { key: "restocks", label: "Chats", icon: ShoppingCart, href: "/chats", color: "bg-emerald-600" },
     ],
   },
   {

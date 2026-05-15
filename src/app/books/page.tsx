@@ -473,7 +473,7 @@ function DocumentsTab({ documents }: { documents: DocumentRow[] }) {
       {documents.map((d) => (
         <li key={d.id}>
           <a
-            href={`/restock/${d.restock_request_id}`}
+            href={`/chats/${d.restock_request_id}`}
             className="block rounded-xl border border-stone-200 bg-white p-3 hover:border-emerald-400"
           >
             <div className="flex items-start justify-between gap-2">
