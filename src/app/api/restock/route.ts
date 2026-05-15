@@ -31,7 +31,11 @@ import {
   transitionStatus,
   updateRequestMetadata,
 } from "@/services/restock/service";
-import { draftRfqFlow, parseSupplierQuoteFlow } from "@/flows/restockChat";
+import {
+  draftRfqFlow,
+  parseSupplierQuoteFlow,
+  replyToFarmerFlow,
+} from "@/flows/restockChat";
 import type { RestockStatus } from "@/lib/restock/types";
 
 interface RequestBody {
@@ -192,13 +196,52 @@ export async function POST(request: Request) {
         }
         const req = await getRestockRequest(supabase, body.restockRequestId);
         if (!req) return badRequest("Restock not found");
-        const msg = await appendMessage(supabase, {
+
+        // 1. Save the farmer's message
+        const farmerMsg = await appendMessage(supabase, {
           restockRequestId: req.id,
           farmId: req.farmId,
           role: "farmer",
           content: body.content,
         });
-        return NextResponse.json({ message: msg });
+
+        // 2. Generate a contextual AI reply. Best-effort — the farmer's
+        //    message is already persisted, so a Gemini failure here just
+        //    means the chat doesn't auto-reply this turn.
+        let aiMsg: typeof farmerMsg | null = null;
+        try {
+          // Pull the chat history + the inventory item name for context
+          const recent = await listMessages(supabase, req.id);
+          const { data: itemRow } = await supabase
+            .from("inventory_items")
+            .select("item_name")
+            .eq("id", req.inventoryItemId)
+            .maybeSingle();
+
+          const reply = await replyToFarmerFlow({
+            farmerMessage: body.content,
+            itemName: itemRow?.item_name ?? "this item",
+            status: req.status,
+            supplierName: req.supplierName ?? undefined,
+            recentMessages: recent.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+          });
+
+          if (reply.reply && reply.reply.trim()) {
+            aiMsg = await appendMessage(supabase, {
+              restockRequestId: req.id,
+              farmId: req.farmId,
+              role: "ai",
+              content: reply.reply.trim(),
+            });
+          }
+        } catch (err) {
+          console.warn("AI reply skipped:", err);
+        }
+
+        return NextResponse.json({ message: farmerMsg, aiReply: aiMsg });
       }
 
       case "upload_quote": {

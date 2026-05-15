@@ -203,8 +203,26 @@ export default function RestockChatPage(props: {
 
   async function sendFarmerMessage() {
     const text = farmerMessage.trim();
-    if (!text) return;
+    if (!text || !restock) return;
     setBusy("send");
+    setFarmerMessage("");
+
+    // Optimistic insert: drop the farmer's message into the local
+    // messages list immediately so the chat doesn't feel sluggish. The
+    // refetch below replaces the temp row with the real one + the AI
+    // reply (the server now generates one in the same request).
+    const optimistic: RestockChatMessage = {
+      id: `optimistic-${Date.now()}`,
+      restockRequestId: id,
+      farmId: restock.farmId,
+      role: "farmer",
+      content: text,
+      attachments: null,
+      actionTaken: null,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+
     try {
       await fetch("/api/restock", {
         method: "POST",
@@ -215,8 +233,11 @@ export default function RestockChatPage(props: {
           content: text,
         }),
       });
-      setFarmerMessage("");
       await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Send failed");
+      // Roll back the optimistic insert on failure
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
     } finally {
       setBusy(null);
     }
@@ -534,7 +555,7 @@ export default function RestockChatPage(props: {
   const hasRfqDraft = messages.some((m) => m.attachments?.kind === "rfq_draft");
 
   return (
-    <div className="min-h-screen bg-stone-50 pb-24">
+    <div className="min-h-screen bg-stone-200 pb-24">
       <header className="sticky top-0 z-10 border-b border-stone-200 bg-white px-4 py-3">
         <div className="mx-auto flex max-w-xl items-center gap-2">
           <Link href="/chats" aria-label="Back to chats">
@@ -592,29 +613,37 @@ export default function RestockChatPage(props: {
             />
           )}
 
-          {messages.map((m) => (
-            <MessageCard
-              key={m.id}
-              message={m}
-              actions={
-                m.role === "ai" && m.attachments ? (
-                  <MessageActions
-                    attachments={m.attachments}
-                    restock={restock}
-                    busy={busy}
-                    onDownloadRfqPdf={downloadRfqPdf}
-                    onUploadFile={uploadSupplierQuote}
-                    onPasteText={pasteSupplierText}
-                    onStartGroupBuy={startGroupBuy}
-                    onLockAndDraftPo={lockAndDraftPo}
-                    onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
-                    onMarkGoodsReceived={markGoodsReceived}
-                    onMarkPaid={markPaid}
-                  />
-                ) : null
-              }
-            />
-          ))}
+          {messages.map((m, idx) => {
+            // Hide the avatar when the previous message was also AI —
+            // groups consecutive AI replies into a visual run, like
+            // WhatsApp does when the same sender posts multiple times.
+            const prev = idx > 0 ? messages[idx - 1] : null;
+            const showAvatar = !(prev && prev.role === "ai" && m.role === "ai");
+            return (
+              <MessageCard
+                key={m.id}
+                message={m}
+                showAvatar={showAvatar}
+                actions={
+                  m.role === "ai" && m.attachments ? (
+                    <MessageActions
+                      attachments={m.attachments}
+                      restock={restock}
+                      busy={busy}
+                      onDownloadRfqPdf={downloadRfqPdf}
+                      onUploadFile={uploadSupplierQuote}
+                      onPasteText={pasteSupplierText}
+                      onStartGroupBuy={startGroupBuy}
+                      onLockAndDraftPo={lockAndDraftPo}
+                      onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
+                      onMarkGoodsReceived={markGoodsReceived}
+                      onMarkPaid={markPaid}
+                    />
+                  ) : null
+                }
+              />
+            );
+          })}
 
           {/* Farewell (closed) */}
           {restock?.status === "closed" && (
@@ -628,11 +657,13 @@ export default function RestockChatPage(props: {
             />
           )}
 
-          {/* Typing indicator while AI is working */}
+          {/* Typing indicator while AI is working — including
+              conversational replies after a free-text farmer message */}
           {(busy === "draft" ||
             busy === "upload" ||
             busy === "draft_po" ||
-            busy === "start_group_buy") && <TypingIndicator />}
+            busy === "start_group_buy" ||
+            busy === "send") && <TypingIndicator />}
 
           <div ref={messagesEndRef} />
         </div>
@@ -662,33 +693,43 @@ export default function RestockChatPage(props: {
         )}
       </main>
 
-      {/* Sticky compose bar only — the action chips sit inline above
-          (visually attached to the last AI message). Keeps the chat
-          flow uninterrupted, matches Claude. */}
+      {/* WhatsApp-style sticky compose bar */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-200 bg-white"
+        className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-300 bg-stone-100"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="mx-auto max-w-xl px-3 py-2">
+        <div className="mx-auto max-w-xl px-2 py-2">
           <div className="flex items-end gap-2">
-            <input
-              type="text"
-              value={farmerMessage}
-              onChange={(e) => setFarmerMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void sendFarmerMessage();
-              }}
-              placeholder="Message the assistant…"
-              className="flex-1 rounded-2xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm placeholder:text-stone-400 focus:border-emerald-400 focus:bg-white focus:outline-none"
-              disabled={busy === "send"}
-            />
+            <div className="flex flex-1 items-center rounded-full border border-stone-200 bg-white shadow-sm">
+              <input
+                type="text"
+                value={farmerMessage}
+                onChange={(e) => setFarmerMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void sendFarmerMessage();
+                  }
+                }}
+                placeholder="Tanya assistant…"
+                className="flex-1 bg-transparent px-4 py-2.5 text-sm placeholder:text-stone-400 focus:outline-none"
+                // Stay enabled during AI reply so the farmer can keep
+                // typing the next message — common chat-app pattern.
+                disabled={false}
+                autoComplete="off"
+              />
+            </div>
             <button
               onClick={sendFarmerMessage}
               disabled={!farmerMessage.trim() || busy === "send"}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors flex-shrink-0"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-700 disabled:bg-stone-300 disabled:text-stone-100 disabled:shadow-none transition-all flex-shrink-0"
               aria-label="Send"
             >
-              <Send size={16} />
+              {busy === "send" ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Send size={16} />
+              )}
             </button>
           </div>
         </div>
@@ -702,11 +743,11 @@ export default function RestockChatPage(props: {
 // it feels like the assistant is mid-reply, not a separate spinner.
 function TypingIndicator() {
   return (
-    <div className="flex items-end gap-2">
-      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
-        <Sparkles size={12} className="text-emerald-700" />
+    <div className="flex items-end gap-1.5">
+      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 shadow-sm">
+        <Sparkles size={12} className="text-white" />
       </span>
-      <div className="rounded-2xl rounded-bl-md border border-stone-200 bg-white px-4 py-3 shadow-sm">
+      <div className="rounded-2xl rounded-bl-sm bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-1">
           <span className="h-2 w-2 animate-pulse rounded-full bg-stone-400 [animation-delay:0ms]" />
           <span className="h-2 w-2 animate-pulse rounded-full bg-stone-400 [animation-delay:200ms]" />
@@ -731,28 +772,41 @@ function TypingIndicator() {
 function MessageCard({
   message,
   actions,
+  showAvatar = true,
 }: {
   message: RestockChatMessage;
   /** Inline button row rendered inside the AI bubble, below content
    *  and attachments. Only meaningful for ai messages. */
   actions?: React.ReactNode;
+  /** Show the small Sparkles avatar next to the AI bubble. Caller can
+   *  hide it for grouped consecutive AI messages — mirrors how WhatsApp
+   *  collapses the avatar across a run from the same sender. */
+  showAvatar?: boolean;
 }) {
   if (message.role === "system") {
     return (
       <div className="my-2 text-center">
-        <span className="inline-block rounded-full bg-stone-200/70 px-3 py-1 text-[10px] text-stone-600">
+        <span className="inline-block rounded-full bg-stone-300/70 px-3 py-1 text-[10px] text-stone-700">
           {message.content}
         </span>
       </div>
     );
   }
 
+  const time = formatTime(message.createdAt);
   const isAi = message.role === "ai";
 
   if (isAi) {
     return (
-      <div className="flex justify-start">
-        <div className="max-w-[88%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 shadow-sm border border-stone-200">
+      <div className="flex items-end gap-1.5">
+        {showAvatar ? (
+          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 shadow-sm">
+            <Sparkles size={12} className="text-white" />
+          </span>
+        ) : (
+          <span className="w-7 flex-shrink-0" aria-hidden />
+        )}
+        <div className="max-w-[82%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 shadow-sm">
           <p className="text-sm text-stone-800 whitespace-pre-wrap leading-relaxed">
             {message.content}
           </p>
@@ -766,6 +820,9 @@ function MessageCard({
               {actions}
             </div>
           )}
+          <p className="mt-1 text-right text-[10px] text-stone-400 select-none">
+            {time}
+          </p>
         </div>
       </div>
     );
@@ -774,7 +831,7 @@ function MessageCard({
   // farmer (outgoing) — pastel emerald, like WhatsApp's outgoing
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-emerald-100 px-3 py-2 shadow-sm">
+      <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-emerald-100 px-3 py-2 shadow-sm">
         <p className="text-sm text-stone-900 whitespace-pre-wrap leading-relaxed">
           {message.content}
         </p>
@@ -783,6 +840,9 @@ function MessageCard({
             <AttachmentRender attachments={message.attachments} />
           </div>
         )}
+        <p className="mt-1 text-right text-[10px] text-stone-500 select-none">
+          {time}
+        </p>
       </div>
     </div>
   );
@@ -799,8 +859,11 @@ function SyntheticAiBubble({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[88%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 shadow-sm border border-stone-200">
+    <div className="flex items-end gap-1.5">
+      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 shadow-sm">
+        <Sparkles size={12} className="text-white" />
+      </span>
+      <div className="max-w-[82%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 shadow-sm">
         <p className="text-sm text-stone-800 whitespace-pre-wrap leading-relaxed">
           {text}
         </p>
@@ -812,6 +875,16 @@ function SyntheticAiBubble({
       </div>
     </div>
   );
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-MY", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 // ─── Message-attachment-driven button group ─────────────────────

@@ -232,6 +232,124 @@ Extract every quantity / price tier the supplier offered for this item. If multi
   }
 );
 
+// ─── 1b. Conversational reply to a free-text farmer message ────
+//
+// Powers the chatbot loop: farmer types something into the compose bar,
+// we save it, then we call this flow to generate a contextual AI reply
+// that's saved as the next message. The AI sees the chat history + the
+// restock context + the new message and replies conversationally,
+// often pointing at one of the inline action buttons.
+
+const FarmerReplySchema = z.object({
+  reply: z.string(),
+});
+
+export type FarmerReply = z.infer<typeof FarmerReplySchema>;
+
+const REPLY_SYSTEM = `You are a Malaysian smallholder farmer's supply-chain assistant inside a chat thread for ONE specific restock request. The farmer just sent you a free-text message.
+
+ABSOLUTE RULES:
+1. Reply in 1-3 short sentences. No lists, no headers, no markdown — this is WhatsApp-style chat.
+2. Tone: warm, practical, BM-leaning (mix BM + English freely the way Malaysian smallholders actually text).
+3. If the farmer is asking what to do next, point them at the right inline action button by NAME (e.g. "Tap 'Download RFQ PDF' lepas tu hantar pada Ah Kow.").
+4. If they're sharing an update ("dah hantar ke supplier"), acknowledge + name the next step.
+5. If they ask a side question (price, when supplier usually replies, etc.), answer briefly using the context.
+6. Never invent prices, supplier names, or quantities not given in the context.
+7. Output JSON only.`;
+
+export const replyToFarmerFlow = ai.defineFlow(
+  {
+    name: "replyToFarmer",
+    inputSchema: z.object({
+      farmerMessage: z.string(),
+      itemName: z.string(),
+      status: z.string(),
+      supplierName: z.string().optional(),
+      recentMessages: z.array(
+        z.object({
+          role: z.enum(["ai", "farmer", "system"]),
+          content: z.string(),
+        })
+      ),
+    }),
+    outputSchema: FarmerReplySchema,
+  },
+  async (input) => {
+    const history = input.recentMessages
+      .slice(-8)
+      .map(
+        (m) =>
+          `[${m.role === "farmer" ? "FARMER" : m.role === "ai" ? "YOU" : "SYSTEM"}] ${m.content}`
+      )
+      .join("\n");
+
+    const stageHint = (() => {
+      switch (input.status) {
+        case "draft":
+          return "No RFQ drafted yet. Action available: 'Draft RFQ for me'.";
+        case "awaiting_supplier":
+          return "RFQ drafted, supplier hasn't replied yet. Actions available: 'Download RFQ PDF', 'Upload supplier reply', 'Paste reply text'.";
+        case "quote_received":
+          return "Supplier quoted with a bulk discount. Action available: 'Start a group buy'.";
+        case "group_buy_live":
+          return "Group buy is live. Actions available: 'Open group buy', 'Lock + draft PO'.";
+        case "po_sent":
+          return "PO sent to supplier. Actions available: 'Download PO PDF', 'Mark goods received', 'Mark supplier paid'.";
+        case "closed":
+          return "Restock complete — journal entries already posted to Books.";
+        default:
+          return "";
+      }
+    })();
+
+    const prompt = `RESTOCK CONTEXT
+Item: ${input.itemName}
+Status: ${input.status}
+Supplier: ${input.supplierName ?? "(none on file)"}
+${stageHint}
+
+RECENT CONVERSATION
+${history}
+
+FARMER'S NEW MESSAGE
+${input.farmerMessage}
+
+Reply conversationally. Output JSON only.`;
+
+    try {
+      const { output } = await ai.generate({
+        model: DEFAULT_MODEL,
+        system: REPLY_SYSTEM,
+        prompt,
+        output: { schema: FarmerReplySchema },
+        config: { temperature: 0.65 },
+      });
+
+      if (output?.reply && output.reply.trim().length > 0) {
+        return output;
+      }
+    } catch (err) {
+      console.warn("replyToFarmerFlow Gemini call failed:", err);
+    }
+
+    // Deterministic fallback so the chat never goes silent on a model
+    // failure. Mirrors the workflow stage so we still help the farmer.
+    const fallback =
+      input.status === "draft"
+        ? "Tap 'Draft RFQ for me' kalau nak saya start."
+        : input.status === "awaiting_supplier"
+          ? "Bila supplier dah balas, tap 'Upload supplier reply' atau 'Paste reply text'."
+          : input.status === "quote_received"
+            ? "Tap 'Start a group buy' kalau nak share dengan jiran."
+            : input.status === "group_buy_live"
+              ? "Tap 'Lock + draft PO' bila dah cukup orang."
+              : input.status === "po_sent"
+                ? "Bila barang sampai, tap 'Mark goods received' untuk update Books."
+                : "Got it. Let me know if you need help.";
+    return { reply: fallback };
+  }
+);
+
 // ─── 2b. Group buy proposal from a parsed quote ────────────────
 
 const GroupBuyProposalSchema = z.object({
