@@ -534,7 +534,7 @@ export default function RestockChatPage(props: {
   );
 
   return (
-    <div className="min-h-screen bg-stone-50 pb-48">
+    <div className="min-h-screen bg-stone-50 pb-24">
       <header className="sticky top-0 z-10 border-b border-stone-200 bg-white px-4 py-3">
         <div className="mx-auto flex max-w-xl items-center gap-2">
           <Link href="/chats" aria-label="Back to chats">
@@ -567,11 +567,41 @@ export default function RestockChatPage(props: {
           </div>
         )}
 
-        {/* Messages — tight chat spacing */}
-        <div className="space-y-2">
-          {messages.map((m) => (
-            <MessageCard key={m.id} message={m} />
-          ))}
+        {/* Messages — tight chat spacing. Each AI message renders alone,
+            then the LAST message in the thread also gets the active
+            action chips inline beneath it (Claude-style suggested
+            actions). */}
+        <div className="space-y-3">
+          {messages.map((m, idx) => {
+            const isLast = idx === messages.length - 1;
+            return (
+              <MessageCard
+                key={m.id}
+                message={m}
+                trailingSlot={
+                  isLast && restock ? (
+                    <ActionZone
+                      restock={restock}
+                      hasRfqDraft={hasRfqDraft}
+                      hasConsolidatedPoDraft={hasConsolidatedPoDraft}
+                      busy={busy}
+                      onDraftRfq={draftRfq}
+                      onDownloadRfqPdf={downloadRfqPdf}
+                      onUploadFile={uploadSupplierQuote}
+                      onPasteText={pasteSupplierText}
+                      onStartGroupBuy={startGroupBuy}
+                      onLockAndDraftPo={lockAndDraftPo}
+                      onDownloadConsolidatedPoPdf={
+                        downloadConsolidatedPoPdf
+                      }
+                      onMarkGoodsReceived={markGoodsReceived}
+                      onMarkPaid={markPaid}
+                    />
+                  ) : undefined
+                }
+              />
+            );
+          })}
 
           {/* Typing indicator while AI is working */}
           {(busy === "draft" ||
@@ -584,7 +614,7 @@ export default function RestockChatPage(props: {
 
         {/* Documents pill — compact, opens an inline list */}
         {documents.length > 0 && (
-          <details className="mt-3 rounded-xl border border-stone-200 bg-white">
+          <details className="mt-4 rounded-xl border border-stone-200 bg-white">
             <summary className="cursor-pointer list-none px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-stone-500 flex items-center gap-2">
               <FileText size={12} className="text-stone-400" />
               {documents.length} document{documents.length === 1 ? "" : "s"}
@@ -607,53 +637,37 @@ export default function RestockChatPage(props: {
         )}
       </main>
 
-      {/* Sticky action zone + compose bar — both fixed at bottom so the
-          farmer's primary moves are always thumb-reachable */}
-      {restock && (
-        <div
-          className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-200 bg-white"
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-        >
-          <div className="mx-auto max-w-xl space-y-2 px-3 py-2">
-            <ActionZone
-              restock={restock}
-              hasRfqDraft={hasRfqDraft}
-              hasConsolidatedPoDraft={hasConsolidatedPoDraft}
-              busy={busy}
-              onDraftRfq={draftRfq}
-              onDownloadRfqPdf={downloadRfqPdf}
-              onUploadFile={uploadSupplierQuote}
-              onPasteText={pasteSupplierText}
-              onStartGroupBuy={startGroupBuy}
-              onLockAndDraftPo={lockAndDraftPo}
-              onDownloadConsolidatedPoPdf={downloadConsolidatedPoPdf}
-              onMarkGoodsReceived={markGoodsReceived}
-              onMarkPaid={markPaid}
+      {/* Sticky compose bar only — the action chips sit inline above
+          (visually attached to the last AI message). Keeps the chat
+          flow uninterrupted, matches Claude. */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-20 border-t border-stone-200 bg-white"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="mx-auto max-w-xl px-3 py-2">
+          <div className="flex items-end gap-2">
+            <input
+              type="text"
+              value={farmerMessage}
+              onChange={(e) => setFarmerMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void sendFarmerMessage();
+              }}
+              placeholder="Message the assistant…"
+              className="flex-1 rounded-2xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm placeholder:text-stone-400 focus:border-emerald-400 focus:bg-white focus:outline-none"
+              disabled={busy === "send"}
             />
-            <div className="flex items-end gap-2">
-              <input
-                type="text"
-                value={farmerMessage}
-                onChange={(e) => setFarmerMessage(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void sendFarmerMessage();
-                }}
-                placeholder="Message the assistant…"
-                className="flex-1 rounded-2xl border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm placeholder:text-stone-400 focus:border-emerald-400 focus:bg-white focus:outline-none"
-                disabled={busy === "send"}
-              />
-              <button
-                onClick={sendFarmerMessage}
-                disabled={!farmerMessage.trim() || busy === "send"}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors flex-shrink-0"
-                aria-label="Send"
-              >
-                <Send size={16} />
-              </button>
-            </div>
+            <button
+              onClick={sendFarmerMessage}
+              disabled={!farmerMessage.trim() || busy === "send"}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors flex-shrink-0"
+              aria-label="Send"
+            >
+              <Send size={16} />
+            </button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -680,22 +694,37 @@ function TypingIndicator() {
 
 // ─── Message bubble ─────────────────────────────────────────────
 //
-// WhatsApp/Claude-style alignment:
+// Claude.ai-style layout:
 //   - system messages = centered grey chip
-//   - ai messages     = left-aligned, Sparkles avatar, white bubble with
-//                       subtle border, attachments rendered inside
-//   - farmer messages = right-aligned, emerald bubble with white text
+//   - ai messages     = left-aligned, Sparkles avatar in the gutter, plain
+//                        text content (no bubble background — just sits
+//                        on the page like a Claude reply). Attachments
+//                        + trailing action chips render below as bordered
+//                        cards.
+//   - farmer messages = right-aligned, soft emerald pill. No avatar.
 //
-// No per-message role label — alignment + avatar do the work, same as
-// every modern messaging app.
+// trailingSlot is the inline action zone for the LAST message in the
+// thread — Claude-style "suggested next moves" attached visually to
+// the latest reply.
 
-function MessageCard({ message }: { message: RestockChatMessage }) {
+function MessageCard({
+  message,
+  trailingSlot,
+}: {
+  message: RestockChatMessage;
+  trailingSlot?: React.ReactNode;
+}) {
   if (message.role === "system") {
     return (
-      <div className="my-1 text-center">
+      <div className="my-2 text-center">
         <span className="inline-block rounded-full bg-stone-100 px-3 py-1 text-[10px] text-stone-500">
           {message.content}
         </span>
+        {trailingSlot && (
+          <div className="mt-2 flex justify-center">
+            <div className="w-full max-w-[90%]">{trailingSlot}</div>
+          </div>
+        )}
       </div>
     );
   }
@@ -704,13 +733,30 @@ function MessageCard({ message }: { message: RestockChatMessage }) {
 
   if (isAi) {
     return (
-      <div className="flex items-end gap-2">
-        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
+      <div className="flex gap-2.5">
+        <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
           <Sparkles size={12} className="text-emerald-700" />
         </span>
-        <div className="flex max-w-[85%] flex-col gap-1.5">
-          <div className="rounded-2xl rounded-bl-md border border-stone-200 bg-white px-3 py-2 shadow-sm">
-            <p className="text-sm text-stone-800 whitespace-pre-wrap leading-relaxed">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <p className="text-sm text-stone-800 whitespace-pre-wrap leading-relaxed">
+            {message.content}
+          </p>
+          {message.attachments && (
+            <AttachmentRender attachments={message.attachments} />
+          )}
+          {trailingSlot}
+        </div>
+      </div>
+    );
+  }
+
+  // farmer
+  return (
+    <>
+      <div className="flex justify-end">
+        <div className="flex max-w-[85%] flex-col items-end gap-1.5">
+          <div className="rounded-2xl rounded-br-md bg-emerald-600 px-3.5 py-2 shadow-sm">
+            <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">
               {message.content}
             </p>
           </div>
@@ -719,23 +765,8 @@ function MessageCard({ message }: { message: RestockChatMessage }) {
           )}
         </div>
       </div>
-    );
-  }
-
-  // farmer
-  return (
-    <div className="flex justify-end">
-      <div className="flex max-w-[85%] flex-col items-end gap-1.5">
-        <div className="rounded-2xl rounded-br-md bg-emerald-600 px-3 py-2 shadow-sm">
-          <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">
-            {message.content}
-          </p>
-        </div>
-        {message.attachments && (
-          <AttachmentRender attachments={message.attachments} />
-        )}
-      </div>
-    </div>
+      {trailingSlot && <div className="mt-2">{trailingSlot}</div>}
+    </>
   );
 }
 
@@ -967,23 +998,14 @@ function ActionZone({
   // Stage 1: no RFQ drafted yet → primary CTA = "Draft RFQ"
   if (!hasRfqDraft && restock.status === "draft") {
     return (
-      <button
-        onClick={onDraftRfq}
-        disabled={busy !== null}
-        className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
-      >
-        {busy === "draft" ? (
-          <>
-            <Loader2 size={14} className="animate-spin" />
-            Drafting RFQ…
-          </>
-        ) : (
-          <>
-            <Sparkles size={14} />
-            Draft RFQ for me
-          </>
-        )}
-      </button>
+      <Chips>
+        <PrimaryChip
+          onClick={onDraftRfq}
+          disabled={busy !== null}
+          icon={busy === "draft" ? "spin" : Sparkles}
+          label={busy === "draft" ? "Drafting RFQ…" : "Draft RFQ for me"}
+        />
+      </Chips>
     );
   }
 
@@ -994,7 +1016,7 @@ function ActionZone({
       restock.status === "draft")
   ) {
     return (
-      <div className="space-y-2">
+      <Chips>
         <input
           ref={fileRef}
           type="file"
@@ -1006,189 +1028,205 @@ function ActionZone({
             if (fileRef.current) fileRef.current.value = "";
           }}
         />
-        <button
+        <PrimaryChip
           onClick={onDownloadRfqPdf}
           disabled={busy !== null}
-          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {busy === "rfq_pdf" ? (
-            <>
-              <Loader2 size={14} className="animate-spin" />
-              Building PDF…
-            </>
-          ) : (
-            <>
-              <Download size={14} />
-              Download RFQ PDF
-            </>
-          )}
-        </button>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={busy !== null}
-            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-xs font-medium text-stone-700 hover:border-emerald-400 disabled:opacity-50 flex items-center justify-center gap-1.5"
-          >
-            <Upload size={12} />
-            Upload supplier reply
-          </button>
-          <button
-            onClick={onPasteText}
-            disabled={busy !== null}
-            className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-xs font-medium text-stone-700 hover:border-emerald-400 disabled:opacity-50 flex items-center justify-center gap-1.5"
-          >
-            <Camera size={12} />
-            Paste reply text
-          </button>
-        </div>
-        {busy === "upload" && (
-          <p className="text-center text-[11px] text-stone-500">
-            <Loader2 size={11} className="inline animate-spin" /> Parsing
-            supplier reply…
-          </p>
-        )}
-      </div>
+          icon={busy === "rfq_pdf" ? "spin" : Download}
+          label={busy === "rfq_pdf" ? "Building PDF…" : "Download RFQ PDF"}
+        />
+        <SecondaryChip
+          onClick={() => fileRef.current?.click()}
+          disabled={busy !== null}
+          icon={Upload}
+          label="Upload supplier reply"
+        />
+        <SecondaryChip
+          onClick={onPasteText}
+          disabled={busy !== null}
+          icon={Camera}
+          label="Paste reply text"
+        />
+        {busy === "upload" && <SubtleNote text="Parsing supplier reply…" />}
+      </Chips>
     );
   }
 
   // Stage 3: quote received → either start a group buy or skip to direct PO.
   if (restock.status === "quote_received") {
     return (
-      <div className="space-y-2">
-        <button
+      <Chips>
+        <PrimaryChip
           onClick={onStartGroupBuy}
           disabled={busy !== null}
-          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {busy === "start_group_buy" ? (
-            <>
-              <Loader2 size={14} className="animate-spin" />
-              Opening group buy…
-            </>
-          ) : (
-            <>
-              <Users size={14} />
-              Start a group buy with neighbours
-            </>
-          )}
-        </button>
-        <p className="text-[11px] text-stone-500 text-center">
-          Or paste another supplier reply to compare quotes.
-        </p>
-      </div>
+          icon={busy === "start_group_buy" ? "spin" : Users}
+          label={
+            busy === "start_group_buy"
+              ? "Opening group buy…"
+              : "Start a group buy with neighbours"
+          }
+        />
+      </Chips>
     );
   }
 
   // Stage 4: group buy live → manage participants, then lock + draft PO.
   if (restock.status === "group_buy_live" && restock.groupBuyId) {
     return (
-      <div className="space-y-2">
-        <Link
-          href={`/group-buy/${restock.groupBuyId}`}
-          className="w-full rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 hover:border-emerald-500 flex items-center justify-center gap-2"
-        >
-          <Users size={14} />
-          Open group buy page
-        </Link>
-        <button
+      <Chips>
+        <SecondaryChip
+          asLink={`/group-buy/${restock.groupBuyId}`}
+          icon={Users}
+          label="Open group buy"
+        />
+        <PrimaryChip
           onClick={onLockAndDraftPo}
           disabled={busy !== null}
-          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {busy === "lock" || busy === "draft_po" ? (
-            <>
-              <Loader2 size={14} className="animate-spin" />
-              {busy === "lock" ? "Locking buy…" : "Drafting PO…"}
-            </>
-          ) : (
-            <>
-              <Lock size={14} />
-              Lock + draft consolidated PO
-            </>
-          )}
-        </button>
+          icon={busy === "lock" || busy === "draft_po" ? "spin" : Lock}
+          label={
+            busy === "lock"
+              ? "Locking…"
+              : busy === "draft_po"
+                ? "Drafting PO…"
+                : "Lock + draft PO"
+          }
+        />
         {hasConsolidatedPoDraft && (
-          <button
+          <SecondaryChip
             onClick={onDownloadConsolidatedPoPdf}
             disabled={busy !== null}
-            className="w-full rounded-xl border border-emerald-400 bg-white px-4 py-3 text-sm font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {busy === "po_pdf" ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Building PO PDF…
-              </>
-            ) : (
-              <>
-                <Download size={14} />
-                Download consolidated PO PDF
-              </>
-            )}
-          </button>
+            icon={busy === "po_pdf" ? "spin" : Download}
+            label={
+              busy === "po_pdf" ? "Building PO PDF…" : "Download PO PDF"
+            }
+            tone="emerald"
+          />
         )}
-      </div>
+      </Chips>
     );
   }
 
   // Stage 5: PO sent → mark goods received + paid (auto-posts to Books).
   if (restock.status === "po_sent") {
     return (
-      <div className="space-y-2">
-        <button
+      <Chips>
+        <PrimaryChip
           onClick={onMarkGoodsReceived}
           disabled={busy !== null}
-          className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {busy === "upload" ? (
-            <>
-              <Loader2 size={14} className="animate-spin" />
-              Recording goods received…
-            </>
-          ) : (
-            <>
-              <Check size={14} />
-              Mark goods received (post GRN)
-            </>
-          )}
-        </button>
-        <button
+          icon={busy === "upload" ? "spin" : Check}
+          label={busy === "upload" ? "Recording…" : "Mark goods received"}
+        />
+        <SecondaryChip
           onClick={onMarkPaid}
           disabled={busy !== null}
-          className="w-full rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-medium text-emerald-800 hover:border-emerald-500 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {busy === "send" ? (
-            <>
-              <Loader2 size={14} className="animate-spin" />
-              Recording payment…
-            </>
-          ) : (
-            <>
-              <Coins size={14} />
-              Mark supplier paid
-            </>
-          )}
-        </button>
-        <p className="text-[10px] text-stone-500 text-center">
-          Both actions auto-post journal entries to your Books.
-        </p>
-      </div>
+          icon={busy === "send" ? "spin" : Coins}
+          label={busy === "send" ? "Recording…" : "Mark supplier paid"}
+          tone="emerald"
+        />
+        <SubtleNote text="Both auto-post to your Books." />
+      </Chips>
     );
   }
 
   // Stage 6: Closed — link to Books for the trail of evidence.
   if (restock.status === "closed") {
     return (
-      <Link
-        href="/books"
-        className="block w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-700 hover:border-emerald-400 text-center flex items-center justify-center gap-2"
-      >
-        <Coins size={14} />
-        See this restock in Books
-      </Link>
+      <Chips>
+        <SecondaryChip asLink="/books" icon={Coins} label="See this in Books" />
+      </Chips>
     );
   }
 
   return null;
+}
+
+// ─── Inline chip primitives ────────────────────────────────────
+//
+// Compact pill buttons that flow under an AI message — Claude-style
+// suggested actions. Wrap in a flex container so they reflow on
+// narrow screens.
+
+function Chips({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap gap-1.5 mt-1">{children}</div>;
+}
+
+type ChipIcon =
+  | "spin"
+  | React.ComponentType<{ size?: number; className?: string }>;
+
+function chipIcon(icon: ChipIcon | undefined) {
+  if (!icon) return null;
+  if (icon === "spin")
+    return <Loader2 size={12} className="animate-spin" />;
+  const Icon = icon;
+  return <Icon size={12} />;
+}
+
+function PrimaryChip({
+  onClick,
+  disabled,
+  icon,
+  label,
+}: {
+  onClick?: () => void;
+  disabled?: boolean;
+  icon?: ChipIcon;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+    >
+      {chipIcon(icon)}
+      {label}
+    </button>
+  );
+}
+
+function SecondaryChip({
+  onClick,
+  disabled,
+  icon,
+  label,
+  asLink,
+  tone = "stone",
+}: {
+  onClick?: () => void;
+  disabled?: boolean;
+  icon?: ChipIcon;
+  label: string;
+  asLink?: string;
+  tone?: "stone" | "emerald";
+}) {
+  const cls =
+    tone === "emerald"
+      ? "inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-white px-3.5 py-1.5 text-xs font-medium text-emerald-800 hover:border-emerald-500 disabled:opacity-50 transition-colors"
+      : "inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3.5 py-1.5 text-xs font-medium text-stone-700 hover:border-emerald-400 disabled:opacity-50 transition-colors";
+
+  if (asLink) {
+    return (
+      <Link href={asLink} className={cls}>
+        {chipIcon(icon)}
+        {label}
+      </Link>
+    );
+  }
+
+  return (
+    <button onClick={onClick} disabled={disabled} className={cls}>
+      {chipIcon(icon)}
+      {label}
+    </button>
+  );
+}
+
+function SubtleNote({ text }: { text: string }) {
+  return (
+    <span className="basis-full text-[10px] text-stone-500">
+      {text}
+    </span>
+  );
 }
 
 function labelForKind(k: string): string {
